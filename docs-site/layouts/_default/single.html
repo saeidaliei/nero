@@ -1,0 +1,35 @@
+{{ define "main" }}
+<div class="docs-layout">
+  <aside class="sidebar" aria-label="Documentation navigation">
+    <div class="sidebar-label">Documentation</div>
+    <nav class="nav-list">
+      <a href="{{ "docs/usage/" | relURL }}">Usage</a>
+      <a href="{{ "docs/markdown/" | relURL }}">Markdown</a>
+      <a href="{{ "docs/gui/" | relURL }}">Desktop GUI</a>
+      <a href="{{ "docs/backup/" | relURL }}">Backups</a>
+      <a href="{{ "docs/recovery/" | relURL }}">Recovery</a>
+      <a href="{{ "docs/security/" | relURL }}">Security</a>
+      <a href="{{ "docs/storage/" | relURL }}">Remote Storage</a>
+      <div class="nav-rule"></div>
+      <a href="{{ "docs/architecture/" | relURL }}">Architecture</a>
+      <a href="{{ "docs/development/" | relURL }}">Development</a>
+      <a href="{{ "docs/ci/" | relURL }}">CI & Releases</a>
+      <a href="{{ "docs/changelog/" | relURL }}">Changelog</a>
+      <a href="{{ "docs/roadmap/" | relURL }}">Roadmap</a>
+    </nav>
+  </aside>
+
+  <article class="doc-article">
+    <div class="eyebrow">NERO / DOCUMENTATION</div>
+    <h1>{{ .Title }}</h1>
+    <div class="article-body">{{ .Content }}</div>
+    {{ if or .PrevInSection .NextInSection }}
+    <nav class="pager" aria-label="Documentation pagination">
+      {{ with .PrevInSection }}<a class="pager-card" href="{{ .RelPermalink }}"><span>Previous</span><strong>{{ .Title }}</strong></a>{{ else }}<span></span>{{ end }}
+      {{ with .NextInSection }}<a class="pager-card pager-card-right" href="{{ .RelPermalink }}"><span>Next</span><strong>{{ .Title }}</strong></a>{{ end }}
+    </nav>
+    {{ end }}
+  </article>
+</div>
+
+{{ end }}

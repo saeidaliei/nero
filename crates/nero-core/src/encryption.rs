@@ -1,9 +1,3 @@
-//! Age-compatible encryption for backup snapshots.
-//!
-//! Encryption deliberately happens outside the live workspace: notes remain plain
-//! Markdown while only exported backup snapshots are encrypted. The private age
-//! identity is stored in the user configuration directory, never in `.nero/`.
-
 use std::{env, fs, io::Write, path::{Path, PathBuf}, str::FromStr};
 
 use age::{secrecy::ExposeSecret, Decryptor, Encryptor};
@@ -161,8 +155,6 @@ fn load_identity(path: &Path) -> Result<age::x25519::Identity> {
         .map_err(|error| NeroError::Message(format!("invalid age identity {}: {error}", path.display())))
 }
 
-// Decryption streams into a temporary/plain ZIP file so large backups never need to fit
-// in memory. Callers keep that file in a private temp directory and remove it afterward.
 fn decrypt_age_to_file(archive: &Path, identity_path: &Path, destination: &Path) -> Result<()> {
     let identity = load_identity(identity_path)?;
     let input = fs::File::open(archive)?;

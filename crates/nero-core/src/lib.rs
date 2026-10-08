@@ -1,10 +1,3 @@
-//! The filesystem-first application core used by Nero's CLI, TUI, and GUI.
-//!
-//! This module owns workspace semantics and delegates parsing, indexing, backups,
-//! storage, Git, and file watching to focused submodules. The frontends should
-//! stay thin: they should ask this crate to do things rather than reimplementing
-//! document or filesystem rules themselves.
-
 mod backup;
 mod encryption;
 mod git;
@@ -141,8 +134,6 @@ impl Workspace {
         Ok(NoteSummary { path: self.relative_path(&path), title: clean_title.to_owned() })
     }
 
-    // Resolve to a workspace-relative path first; callers never get to read an arbitrary
-    // filesystem path just because a query happened to contain `..` or an absolute path.
     pub fn read_note(&self, query: &str) -> Result<Note> {
         let path = self.resolve_note(query)?.ok_or_else(|| NeroError::Message(format!("note not found: {query}")))?;
         let body = fs::read_to_string(self.root.join(&path))?;
@@ -489,8 +480,6 @@ fn resolve_existing_note_candidate(root: &Path, candidate: &Path) -> Result<Opti
     Ok(Some(canonical))
 }
 
-// Canonicalization is the security boundary for note/asset reads. It also catches
-// symlinks that would otherwise make a seemingly local path point outside the workspace.
 fn canonical_workspace_file(root: &Path, path: &Path) -> Result<Option<PathBuf>> {
     if path.is_absolute() && !path.starts_with(root) { return Ok(None); }
     let relative = path.strip_prefix(root).unwrap_or(path);
@@ -672,8 +661,6 @@ mod asset_tests {
 
 fn normalize_path(path: &Path) -> String { path.to_string_lossy().replace('\\', "/") }
 
-// Write-then-rename keeps a crash or interrupted write from leaving a half-written note.
-// On Unix we also sync the parent directory so the rename itself is durable.
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
@@ -697,8 +684,6 @@ fn sync_parent_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-// Daily notes follow the machine's local calendar date, not UTC: `today` should match
-// what the user sees on their system when a day crosses a UTC boundary.
 fn chrono_like_date() -> String {
     Local::now().date_naive().format("%Y-%m-%d").to_string()
 }

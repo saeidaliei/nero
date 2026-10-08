@@ -1,0 +1,14 @@
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="{{ "" | relURL }}" aria-label="Nero documentation home">
+      <span class="brand-mark">N</span>
+      <span class="brand-word">Nero</span>
+      <span class="brand-version">{{ .Site.Params.version }}</span>
+    </a>
+    <div class="topbar-actions">
+      <button class="icon-button" id="search-open" type="button" aria-label="Search documentation" title="Search (⌘K / Ctrl+K)">⌘K</button>
+      <button class="icon-button" id="theme-toggle" type="button" aria-label="Change theme">◐</button>
+      <a class="text-button" href="{{ .Site.Params.projectURL }}">GitHub ↗</a>
+    </div>
+  </div>
+</header>

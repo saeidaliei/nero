@@ -1,8 +1,3 @@
-//! Lightweight terminal presentation of a parsed Nero document.
-//!
-//! This is intentionally a presentation layer rather than a second Markdown
-//! parser. The document source and metadata come from `nero-core`.
-
 use nero_core::Document;
 use ratatui::{style::{Color, Modifier, Style}, text::{Line, Span, Text}};
 

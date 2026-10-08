@@ -1,8 +1,3 @@
-//! Disposable SQLite/FTS5 index built from the Markdown workspace.
-//!
-//! The database is a cache, not user data. If its schema changes or the file is
-//! deleted, the workspace remains intact and the index is rebuilt from source.
-
 use std::{collections::{HashMap, HashSet}, fs, path::Path, time::Duration};
 
 use rusqlite::{params, Connection};
@@ -49,8 +44,6 @@ impl Index {
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        // The index is disposable. A version mismatch is cheaper and safer to handle by
-        // rebuilding it than by maintaining migrations for a cache that can be regenerated.
         if version != SCHEMA_VERSION {
             connection.execute_batch("DROP TABLE IF EXISTS note_search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS notes;")?;
         }

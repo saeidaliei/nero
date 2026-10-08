@@ -1,0 +1,20 @@
+baseURL = 'https://saeidaliei.github.io/nero/'
+languageCode = 'en-us'
+title = 'Nero Documentation'
+enableRobotsTXT = true
+timeZone = 'Europe/Berlin'
+
+[params]
+  description = 'Documentation for Nero, a small local-first knowledge system built around plain Markdown.'
+  projectURL = 'https://github.com/saeidaliei/nero'
+  docsSource = 'https://github.com/saeidaliei/nero/tree/main/docs'
+  version = '1.0.0'
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = false
+  [markup.highlight]
+    noClasses = true
+    lineNos = false
+    lineNumbersInTable = false

@@ -1,9 +1,3 @@
-//! Provider-neutral remote backup transport through the user's `rclone`.
-//!
-//! Nero stores only target names in workspace metadata. Credentials and provider
-//! authentication remain in rclone's own configuration, keeping Nero independent
-//! from any particular cloud service.
-
 use std::{
     env,
     fs,
@@ -151,8 +145,6 @@ impl Workspace {
         let source = local_file.to_string_lossy().into_owned();
         let destination = join_remote_path(&remote.target, file_name);
         ensure_rclone()?;
-        // `--immutable` makes a snapshot effectively append-only: a second upload cannot
-        // silently replace an existing backup, and `copyto` avoids sync-style deletions.
         run_rclone(&["copyto", &source, &destination, "--checksum", "--immutable"])?;
         Ok(destination)
     }

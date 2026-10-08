@@ -1,0 +1,48 @@
+{{ define "main" }}
+<section class="hero">
+  <div class="eyebrow">LOCAL-FIRST KNOWLEDGE SYSTEM · {{ .Site.Params.version }}</div>
+  <h1>A small place<br>for your thoughts.</h1>
+  <p class="hero-lead">Plain Markdown. Local files. Fast search. Beautiful reading. No lock-in.</p>
+  <div class="hero-actions">
+    <a class="button button-primary" href="{{ "docs/usage/" | relURL }}">Get started</a>
+    <a class="button button-quiet" href="{{ .Site.Params.projectURL }}">View source ↗</a>
+  </div>
+</section>
+
+<section class="home-grid">
+  <div>
+    <div class="section-label">Start here</div>
+    <div class="feature-list">
+      <a href="{{ "docs/usage/" | relURL }}"><strong>Usage</strong><span>Install Nero and learn the daily workflow.</span></a>
+      <a href="{{ "docs/markdown/" | relURL }}"><strong>Markdown</strong><span>Notes, math, wiki links, tasks, and assets.</span></a>
+      <a href="{{ "docs/gui/" | relURL }}"><strong>Desktop</strong><span>The elegant graphical interface.</span></a>
+    </div>
+  </div>
+  <div>
+    <div class="section-label">Trust & portability</div>
+    <div class="feature-list">
+      <a href="{{ "docs/backup/" | relURL }}"><strong>Backups</strong><span>Portable snapshots and integrity verification.</span></a>
+      <a href="{{ "docs/security/" | relURL }}"><strong>Security</strong><span>Encryption, boundaries, and threat model.</span></a>
+      <a href="{{ "docs/storage/" | relURL }}"><strong>Storage</strong><span>Remote encrypted backups through rclone.</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="quote-panel">
+  <div class="quote-mark">“</div>
+  <blockquote>Markdown files are the source of truth. Everything else is an interface or a cache.</blockquote>
+</section>
+
+<section class="doc-index-strip">
+  <div class="section-label">The rest</div>
+  <div class="strip-links">
+    <a href="{{ "docs/architecture/" | relURL }}">Architecture</a>
+    <a href="{{ "docs/development/" | relURL }}">Development</a>
+    <a href="{{ "docs/ci/" | relURL }}">CI & Releases</a>
+    <a href="{{ "docs/recovery/" | relURL }}">Recovery</a>
+    <a href="{{ "docs/changelog/" | relURL }}">Changelog</a>
+    <a href="{{ "docs/roadmap/" | relURL }}">Roadmap</a>
+  </div>
+</section>
+
+{{ end }}

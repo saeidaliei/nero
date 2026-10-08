@@ -1,0 +1,12 @@
+{{ define "main" }}
+<div class="doc-index">
+  <div class="eyebrow">NERO / DOCUMENTATION</div>
+  <h1>{{ .Title }}</h1>
+  <div class="article-body">{{ .Content }}</div>
+  <div class="doc-grid">
+    {{ range .Pages.ByWeight }}
+      <a class="doc-card" href="{{ .RelPermalink }}"><span>{{ .Title }}</span><small>Read documentation →</small></a>
+    {{ end }}
+  </div>
+</div>
+{{ end }}

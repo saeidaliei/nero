@@ -4,17 +4,73 @@
 >
 > Plain Markdown. Local files. Fast search. Beautiful reading.
 
-Nero is a local-first knowledge tool built around one deliberately boring rule:
+Nero is a local-first knowledge tool built around a deliberately boring idea:
+**Markdown files are the source of truth.** Everything else is an interface or a cache.
 
-> **Markdown files are the source of truth. Everything else is an interface or a cache.**
-
-It provides one core with three interfaces:
+The plan is one core with three interfaces:
 
 - `nero` — CLI
 - `nero-tui` — terminal UI
-- `nero-gui` — desktop GUI
+- `nero-gui` — desktop GUI backed by the same core
 
-## Quick start
+## Design principles
+
+1. **Files first.** A note is a normal `.md` file you can edit with Vim, Emacs, VS Code, or anything else.
+2. **Small surface area.** Nero should solve notes, linking, search, and reading exceptionally well before adding anything else.
+3. **Unix-friendly.** Commands should compose with other tools, and machine-readable output should be easy to add.
+4. **No lock-in.** Deleting Nero must never make your notes unusable.
+5. **Beautiful by restraint.** Reading is the primary experience; chrome is secondary.
+
+## Current milestone
+
+The current snapshot is the **1.0.0 stable release**. It includes:
+
+- Comrak-powered Markdown rendering
+- dollar and LaTeX-style math parsing
+- `[[wiki links]]` parsing
+- lightweight frontmatter extraction
+- task counts from Markdown checkboxes
+- SQLite FTS5 indexing
+- incremental index refreshes
+- indexed backlinks
+- cross-platform file watching
+- `render`, `reindex`, and `watch` CLI commands
+- a Ratatui TUI reader with search, command palette, backlinks, context/recent panels, terminal math, and live file reload
+- a Tauri desktop GUI with the same core document/search/link APIs
+- KaTeX typesetting for Comrak math nodes in the GUI
+- an embedded Markdown editor with syntax highlighting, split preview, selection preservation, and smart list continuation
+- native image import into a workspace `assets/` directory and local image rendering in previews
+- portable local backup archives with manifests, SHA-256 verification, and safe restore
+- streamed age-compatible encrypted backups with a private identity stored outside the workspace
+- key management commands for the default backup identity
+- provider-neutral remote backup storage through the external `rclone` command
+- named storage targets with an explicit encrypted-backup policy
+- remote backup listing, upload, download, and restore commands
+- safe workspace boundary enforcement and symlink-resistant indexing
+- atomic note/config/backup/key writes and recovery-safe encrypted restores
+- GUI split preview rendered by the same Comrak engine as normal reading mode
+- heading-aware `[[Note#Heading]]` navigation in the desktop reader
+- Git helpers for initialization, snapshots, remotes, push, and pull
+- a full decrypt/restore/recovery-test path
+
+The index lives at `.nero/index.sqlite` and is disposable. Delete it and Nero can rebuild it from the Markdown files.
+
+## Workspace
+
+```text
+~/notes/
+├── projects/
+├── ideas/
+├── daily/
+├── assets/
+├── *.md
+└── .nero/
+    └── index.sqlite
+```
+
+Any `.md` file beneath the workspace is a note. Directories are organizational, not database objects.
+
+## Example
 
 ```bash
 nero init ~/notes
@@ -22,50 +78,160 @@ cd ~/notes
 nero new "Fourier Transform"
 nero edit "Fourier Transform"
 nero find "frequency"
+nero backlinks "Fourier Transform"
+nero render "Fourier Transform"
+nero reindex
 nero today
+nero watch
 ```
 
-Start the TUI with:
+A note can contain ordinary Markdown, tasks, internal links, and math:
+
+```markdown
+---
+tags: math, dsp
+---
+
+# Fourier Transform
+
+For a function $f(t)$:
+
+$$
+F(\omega) = \int_{-\infty}^{\infty} f(t)e^{-i\omega t}\,dt
+$$
+
+- [ ] Read the next chapter
+- [x] Understand the transform pair
+
+See also [[Signal Processing]].
+```
+
+`nero render "Fourier Transform"` returns the generated HTML. The GUI uses the `data-math-style` nodes emitted by Comrak and typesets them with KaTeX.
+
+## Architecture
+
+```text
+                         ┌────────────────────┐
+                         │     Markdown       │
+                         │       files        │
+                         └─────────┬──────────┘
+                                   │
+                                   ▼
+                         ┌────────────────────┐
+                         │     nero-core      │
+                         │ markdown / links   │
+                         │ storage / search   │
+                         │ file watching      │
+                         └──────┬───────┬─────┘
+                                │       │
+                         ┌──────┘       └───────┐
+                         ▼                      ▼
+                     SQLite FTS5              UIs
+                                           ┌────┼────┐
+                                           ▼    ▼    ▼
+                                          CLI  TUI  GUI
+```
+
+The core deliberately does not know about the TUI or GUI. They consume the same APIs and the same files.
+
+## Why SQLite?
+
+SQLite is an implementation detail, not the document format. FTS5 gives Nero fast full-text search while keeping notes as ordinary files. The index is always rebuildable.
+
+## Why Comrak?
+
+Nero is not inventing its own Markdown dialect. CommonMark/GFM-compatible Markdown stays the default, while Nero adds only the small amount of syntax that makes local linking useful.
+
+## Continuous integration
+
+Nero runs GitHub Actions on pushes, pull requests, and manual dispatch. The workflow checks the Rust workspace on Linux, macOS, and Windows, validates the GUI frontend/Tauri backend, and runs the end-to-end smoke test. See [`docs/CI.md`](CI.md).
+
+## Releases
+
+Releases are created by pushing a semantic version tag such as:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions validates that the tag matches every Nero/Tauri package version, builds CLI and desktop artifacts for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64, creates SHA-256 checksums, and publishes the files to the GitHub Release. The desktop build uses Tauri's documented ad-hoc macOS signing identity (`-`) when no Apple certificate is configured.
+
+## Development
+
+Use the pinned Rust 1.90.0 toolchain from `rust-toolchain.toml`. The workspace expects Rust 2024 edition. The GUI frontend targets Node 24 (`gui/.nvmrc`).
+
+```bash
+cargo test --workspace
+cargo run -p nero -- --help
+cargo run -p nero -- tui
+```
+
+The original scaffolding environment used to create this repository did not include Rust, so this iteration has not been compiled locally in that environment. Dependency choices were checked against current upstream crate documentation.
+
+## TUI
+
+Run the terminal reader with:
 
 ```bash
 cargo run -p nero -- tui
 ```
 
-Start the desktop GUI from `gui/` with:
+The TUI is deliberately keyboard-first:
+
+- `j` / `k` — move through notes
+- `/` — search
+- `:` — command palette
+- `b` — backlinks
+- `c` — context
+- `r` — recent notes
+- `Tab` — cycle side panels
+- `Ctrl-D` / `Ctrl-U` — page down/up
+- `q` — quit
+
+The TUI watches the workspace for Markdown changes and refreshes the current note and search index automatically.
+
+
+## 0.7 design note
+
+Nero's document model remains the single source of truth for all frontends. The desktop GUI is a thin Tauri shell around the same core APIs used by the CLI and TUI; Markdown remains ordinary files and `.nero/index.sqlite` remains disposable.
+
+
+## Backup and recovery
+
+Nero keeps the live workspace as plain files. Backups are separate snapshots and can optionally be encrypted with the age format:
 
 ```bash
+nero key generate
+nero backup create --encrypt
+nero backup verify backup.age
+nero backup recovery-test backup.age
+nero backup restore backup.age /tmp/nero-restore
+```
+
+The private identity lives outside the workspace by default. Keep another protected copy of it; without the identity, encrypted backups cannot be recovered. See [`docs/BACKUP.md`](docs/BACKUP.md), [`docs/RECOVERY.md`](docs/RECOVERY.md), and [`docs/SECURITY.md`](docs/SECURITY.md) for the full model.
+
+Git is a complementary versioning layer:
+
+```bash
+nero git init
+nero git snapshot "Notes checkpoint"
+nero git remote add origin git@github.com:you/notes.git
+nero git push
+```
+
+## GUI
+
+The desktop frontend lives in `gui/` and uses Tauri 2 with a deliberately small vanilla TypeScript/CSS surface. It reads and searches notes through `nero-core`; it does not invent a second document format.
+
+Development:
+
+```bash
+cd gui
 pnpm install
 NERO_WORKSPACE=~/notes pnpm tauri dev
 ```
 
-## Project structure
+The workspace can also be discovered from the current directory when `.nero/` exists. The editor keeps Markdown as the source of truth. Split mode derives a live preview, images are ordinary Markdown references, and imported images are copied into `assets/`.
 
-```text
-crates/              Rust core + CLI + TUI
-gui/                  Tauri desktop frontend
-examples/             example Markdown notes
-tests/                end-to-end smoke test
-docs/                 full project documentation
-.github/workflows/    CI and release automation
-```
-
-## Documentation
-
-The full documentation lives in [`docs/`](docs/README.md):
-
-- [Usage](docs/USAGE.md)
-- [Markdown format](docs/MARKDOWN.md)
-- [Architecture](docs/DESIGN.md)
-- [Development](docs/DEVELOPMENT.md)
-- [GUI](docs/GUI.md)
-- [Backups](docs/BACKUP.md)
-- [Recovery](docs/RECOVERY.md)
-- [Security](docs/SECURITY.md)
-- [Remote storage](docs/STORAGE.md)
-- [CI and releases](docs/CI.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Changelog](docs/CHANGELOG.md)
-
-## License
-
-MIT. See [`LICENSE`](LICENSE).
+The 1.0 hardening pass tightened workspace boundaries, safer writes, local-date handling, index recovery, and unified GUI Markdown rendering.

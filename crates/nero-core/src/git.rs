@@ -1,9 +1,3 @@
-//! Small, explicit wrappers around the system `git` executable.
-//!
-//! Nero does not reimplement Git. The wrapper only provides safe, predictable
-//! note-oriented commands while leaving remotes, credentials, signing, and Git
-//! configuration to the normal Git installation.
-
 use std::{path::Path, process::{Command, Output}};
 
 use crate::{NeroError, Result, Workspace};
@@ -104,8 +98,6 @@ fn validate_git_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-// Nero only passes a branch name to `git push/pull`; reject option-looking input so a
-// caller cannot smuggle flags such as `--force` through what should be a data argument.
 fn validate_git_branch(branch: &str) -> Result<()> {
     if branch.is_empty() || branch.starts_with('-') || branch.chars().any(char::is_whitespace) {
         return Err(NeroError::Message(format!("invalid git branch: {branch}")));

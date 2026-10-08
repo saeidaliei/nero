@@ -1,9 +1,3 @@
-//! Tauri application bridge for Nero's desktop frontend.
-//!
-//! Commands in this module translate WebView requests into `nero-core` calls. The
-//! Rust core remains authoritative for filesystem access, parsing, search, and links;
-//! the TypeScript side should not duplicate those rules.
-
 use std::{env, path::PathBuf, sync::Mutex, thread};
 
 use nero_core::{Document, NoteSummary, TaskCounts, WikiLink, Workspace, WorkspaceWatcher};
@@ -184,8 +178,6 @@ fn read_asset_data_url(source_path: String, reference: String, state: State<'_, 
 }
 
 #[tauri::command]
-// Save through the core so GUI edits get the same atomic-write and workspace-boundary
-// guarantees as CLI/TUI edits. The frontend never writes note files directly.
 fn save_note(query: String, source: String, state: State<'_, AppState>) -> Result<DocumentDto, String> {
     state.workspace.save_note(&query, &source)
         .map(to_document)

@@ -1,8 +1,3 @@
-//! Nero's command-line entry point.
-//!
-//! The CLI is intentionally a thin adapter over `nero-core`; it should validate
-//! user-facing arguments and present results without owning document semantics.
-
 use std::{env, io::{self, Write}, path::PathBuf, process::{exit, Command as ProcessCommand}};
 
 use nero_core::{NoteSummary, Result, SearchResult, Workspace};

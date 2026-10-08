@@ -1,9 +1,3 @@
-//! Portable workspace snapshots and integrity verification.
-//!
-//! Backups contain source files plus a manifest of sizes and SHA-256 digests.
-//! Derived state such as `.nero/` and `.git/` stays out of the archive so a restore
-//! produces a clean, portable workspace.
-
 use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 
 use serde::{Deserialize, Serialize};
@@ -274,8 +268,6 @@ fn unix_now() -> u64 {
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
 }
-// Never trust archive entry names: rejecting absolute paths, prefixes, and `..` prevents
-// a malicious ZIP from writing outside the restore destination (Zip Slip).
 fn safe_archive_path(path: &str) -> Result<PathBuf> {
     let raw = Path::new(path);
     if raw.is_absolute() {

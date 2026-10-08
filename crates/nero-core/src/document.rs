@@ -1,9 +1,3 @@
-//! Markdown parsing and the small Nero-specific document model.
-//!
-//! Comrak is the single Markdown parser for all frontends. Keeping the parsed
-//! document here prevents the GUI, TUI, and CLI from slowly growing different
-//! interpretations of the same note.
-
 use std::collections::BTreeMap;
 
 use comrak::{markdown_to_html, Options};
@@ -71,8 +65,6 @@ pub fn parse(body: &str) -> Document {
     }
 }
 
-// Unsafe HTML remains disabled on purpose. Notes may be opened in the Tauri WebView,
-// so arbitrary raw HTML from a Markdown file should not become executable page content.
 pub fn render_html(body: &str) -> String {
     let mut options = Options::default();
     options.extension.table = true;

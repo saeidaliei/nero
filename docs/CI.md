@@ -18,3 +18,13 @@ Release automation lives in `.github/workflows/release.yml`. A tag such as `v1.0
 
 The macOS CI build uses Tauri's ad-hoc signing identity only when no Apple certificate is configured. Proper Developer ID signing and notarization can be added later without changing the release artifact flow.
 
+
+
+## Documentation site
+
+Nero's canonical `docs/` directory is published as the project documentation site at:
+
+https://saeidaliei.github.io/nero/
+
+The Hugo source lives in `docs-site/` and is built by `.github/workflows/docs.yml`.
+The workflow generates the Hugo content tree from `docs/` so the documentation is not maintained twice.

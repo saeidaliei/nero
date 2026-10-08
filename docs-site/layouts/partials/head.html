@@ -1,0 +1,19 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="{{ .Description | default .Site.Params.description }}">
+<link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
+<title>{{ if .IsHome }}Nero{{ else }}{{ .Title }} · Nero{{ end }}</title>
+<link rel="stylesheet" href="{{ "css/nero.css" | relURL }}">
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem('nero-theme') || 'system';
+</script>
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['\\(', '\\)'], ['$', '$']],
+      displayMath: [['\\[', '\\]'], ['$$', '$$']]
+    },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
