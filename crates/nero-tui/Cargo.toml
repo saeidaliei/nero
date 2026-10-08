@@ -4,10 +4,11 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-repository.workspace = true
-
-[dependencies]
-nero-core = { path = "../nero-core" }
 
 [lints]
 workspace = true
+
+[dependencies]
+crossterm = "0.29"
+nero-core = { path = "../nero-core" }
+ratatui = "0.30"

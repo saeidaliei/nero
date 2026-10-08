@@ -8,20 +8,21 @@
 
 ```text
 workspace/
-├── notes/              # optional conventional folder; Nero can also use the root
+├── projects/           # optional user organization
 ├── daily/
 ├── assets/
-└── .note/
-    └── config.toml     # future configuration
+├── *.md
+└── .nero/
+    └── index.sqlite
 ```
 
-For the MVP, notes are stored recursively anywhere under the workspace root as `.md` files.
+Nero recursively discovers `.md` files beneath the workspace root. Directories are ordinary filesystem organization.
 
 ## Note identity
 
-A note is identified by its relative path. This keeps identity deterministic, Git-friendly, and inspectable.
+A note is identified by its relative path. A title is presentation metadata, not the canonical identifier. This keeps links portable and keeps Git diffs understandable.
 
-A future alias/frontmatter layer can add friendly names without replacing path identity.
+Friendly aliases can be layered on later, but they must not destroy path-based portability.
 
 ## Internal links
 
@@ -30,32 +31,54 @@ Syntax:
 ```text
 [[Relative Name]]
 [[relative/path.md]]
+[[Target|Displayed label]]
+[[Note#Heading]]
 ```
 
-MVP link resolution is forgiving: compare exact relative paths first, then `.md` paths, then filename/title stems.
+The target is resolved in this order:
+
+1. relative to the source note's directory
+2. workspace-relative path
+3. exact note title
+4. filename stem
+
+The optional `#Heading` fragment does not change note identity; heading-aware navigation will be layered on later. `[[target|label]]` keeps the target and display label separate in the core document model.
 
 ## Search
 
-MVP search is intentionally simple and portable. The planned production search layer is SQLite FTS5:
-
 ```text
-Markdown files → parser → SQLite FTS5 index
-                     └── links table
+Markdown files
+      │
+      ▼
+   parser
+      │
+      ├───────────────► links table
+      │
+      ▼
+ SQLite FTS5
 ```
 
-The index must always be rebuildable from source files.
+The search index stores only derived information. It can be deleted and rebuilt at any time.
+
+Index refresh is incremental using file modification time, size, and title metadata.
 
 ## Markdown and math
 
-The rendering layer should use CommonMark/GFM-compatible Markdown with minimal extensions. The first custom syntax is wiki links (`[[...]]`).
+Nero stays close to CommonMark/GFM. The intentional extensions are:
 
-Math remains ordinary Markdown text using standard TeX delimiters such as `$...$` and `$$...$$`.
+- wiki links (`[[...]]`)
+- task list rendering
+- `$...$` and `$$...$$` math
+- `\(...\)` and `\[...\]` math
+- simple YAML-like frontmatter extraction
 
-Planned renderer stack:
+The current HTML renderer is Comrak. The future GUI will pass math nodes through KaTeX for polished typesetting. The TUI will eventually use terminal-friendly math rendering.
 
-- parser: Comrak
-- GUI math: KaTeX
-- terminal math: tui-math or a small internal fallback
+## File watching
+
+External editors are first-class citizens. A watcher observes the workspace recursively, ignores `.nero`, and reports Markdown changes. The CLI can use it to keep the index fresh; the TUI will later consume the same mechanism for live reload.
+
+Filesystem watchers are advisory. Nero should always be able to recover from missed events by doing a complete index refresh.
 
 ## Frontends
 
@@ -69,9 +92,9 @@ The TUI is a keyboard-first reader/browser. Editing initially delegates to `$EDI
 
 ### GUI
 
-The GUI will arrive after the core and TUI stabilize. The preferred direction is Tauri with a small TypeScript/HTML/CSS frontend, primarily because web typography and KaTeX make high-quality document rendering inexpensive.
+The GUI is a Tauri desktop shell with a deliberately small HTML/CSS/TypeScript surface. It consumes `nero-core` over typed Tauri commands and receives filesystem changes over Tauri events. It does not become the owner of documents or indexing.
 
-## Things we deliberately do not have yet
+## Things deliberately excluded
 
 - accounts
 - cloud sync
@@ -84,4 +107,87 @@ The GUI will arrive after the core and TUI stabilize. The preferred direction is
 - plugin marketplace
 - mobile clients
 
-The burden of proof is on every feature.
+Every future feature has to justify its complexity against the core idea: **small, local, elegant, useful.**
+
+
+## GUI architecture
+
+The desktop frontend is intentionally thin:
+
+```text
+Tauri / WebView
+      │ IPC commands/events
+      ▼
+  nero-core
+      │
+      ├── Markdown files
+      ├── SQLite FTS5
+      └── filesystem watcher
+```
+
+The frontend receives derived document data from Rust and never becomes the owner of note storage. Comrak emits math nodes using `data-math-style="inline|display"`; the GUI passes those nodes to KaTeX instead of trying to parse LaTeX itself.
+
+Tauri's command system is the IPC boundary. Live Markdown changes are forwarded as a `workspace-changed` event after the core refreshes its index.
+
+## Editing
+
+The GUI edits Markdown source directly. Preview is derived from the same source; no proprietary block model is introduced.
+
+## 0.7 editor design
+
+The embedded GUI editor remains a normal Markdown text surface rather than a block editor. A styled syntax layer sits behind the real textarea; the textarea remains responsible for selection, input, undo, clipboard, and text editing. This keeps the editor visually richer without inventing a second document representation.
+
+Split mode derives preview from the current draft and synchronizes preview scroll proportionally with the source editor. Saved rendering still comes from the Rust/Comrak document engine, so live preview is an interaction aid rather than the semantic source of truth.
+
+Images are imported through a native file picker into `assets/`. Markdown stores ordinary relative image references. The GUI asks the core to resolve local images and receive data URLs for display, avoiding a dependency on webview filesystem URL permissions while keeping the files portable outside Nero.
+## Backup and storage
+
+The live workspace remains plaintext and portable. Backups are derived snapshots. Nero's first backup format is a ZIP archive containing a manifest and SHA-256 hashes, excluding `.nero/` and `.git/`.
+
+Storage and encryption are intentionally separate layers. The current path is:
+
+```text
+workspace
+   │
+   ▼
+snapshot
+   │
+   ▼
+optional age encryption
+   │
+   ├── Git remote
+   └── rclone remote
+```
+
+Git is for version history; object/cloud storage is for disaster recovery. Neither layer changes the source-of-truth Markdown model.
+
+
+## 0.9–1.0 resilience layers
+
+Nero now distinguishes three concerns:
+
+```text
+Markdown workspace
+      │
+      ├── Git ───────────► history / remotes
+      │
+      └── backup snapshot
+                │
+                ▼
+           optional age
+                │
+                ▼
+           rclone transport
+```
+
+The live workspace remains ordinary files. The default age X25519 identity is stored outside the workspace so an encrypted backup can remain safe even when the storage provider can read the backup object.
+
+The Git integration delegates to the real `git` executable rather than linking a Git implementation into the core. This keeps Git configuration, credential helpers, SSH keys, signing, hosting providers, and other Git tooling authoritative.
+
+Remote object storage is intentionally not coupled to the age implementation. The rclone adapter uploads the already-encrypted `.age` artifact when a storage profile requires encryption; provider credentials stay in rclone's own configuration.
+
+## Remote storage adapter
+
+Nero delegates transport to the external `rclone` executable instead of embedding provider SDKs. A workspace stores only named target paths and an encrypted-backup policy in `.nero/storage.json`; it never stores provider passwords, OAuth tokens, or API keys there.
+
+Uploads use `rclone copyto` for a single backup object. Nero intentionally does not use `rclone sync` for backups because backup transport must not delete unrelated objects on the destination.

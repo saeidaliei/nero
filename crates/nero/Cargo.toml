@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-repository.workspace = true
-
-[dependencies]
-nero-core = { path = "../nero-core" }
 
 [lints]
 workspace = true
+
+[dependencies]
+nero-core = { path = "../nero-core" }
+nero-tui = { path = "../nero-tui" }

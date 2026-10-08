@@ -1,10 +1,6 @@
 /target/
-.idea/
-.vscode/
-.DS_Store
-*.swp
-*.swo
-
-# Nero's local index/cache
-.note/index.sqlite
-.note/index.db
+.nero/
+**/.DS_Store
+gui/node_modules/
+gui/dist/
+gui/src-tauri/target/

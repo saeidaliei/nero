@@ -1,0 +1,16 @@
+[package]
+name = "nero-gui"
+version = "1.0.0"
+edition = "2024"
+authors = ["Nero contributors"]
+license = "MIT"
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = "2.5"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8.1"
+nero-core = { path = "../../crates/nero-core" }

@@ -8,10 +8,10 @@ members = [
 
 [workspace.package]
 edition = "2024"
-version = "0.1.0"
+rust-version = "1.90"
+version = "1.0.0"
 authors = ["Nero contributors"]
 license = "MIT"
-repository = "https://github.com/nero-project/nero"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
