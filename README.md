@@ -138,6 +138,21 @@ SQLite is an implementation detail, not the document format. FTS5 gives Nero fas
 
 Nero is not inventing its own Markdown dialect. CommonMark/GFM-compatible Markdown stays the default, while Nero adds only the small amount of syntax that makes local linking useful.
 
+## Continuous integration
+
+Nero runs GitHub Actions on pushes, pull requests, and manual dispatch. The workflow checks the Rust workspace on Linux, macOS, and Windows, validates the GUI frontend/Tauri backend, and runs the end-to-end smoke test. See [`CI.md`](CI.md).
+
+## Releases
+
+Releases are created by pushing a semantic version tag such as:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions validates that the tag matches every Nero/Tauri package version, builds CLI and desktop artifacts for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64, creates SHA-256 checksums, and publishes the files to the GitHub Release. The desktop build uses Tauri's documented ad-hoc macOS signing identity (`-`) when no Apple certificate is configured.
+
 ## Development
 
 Use a current stable Rust toolchain. The workspace expects Rust 2024 edition.

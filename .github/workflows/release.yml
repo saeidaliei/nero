@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate tag and project versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["TAG"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              raise SystemExit(f"release tag must look like v1.2.3, got {tag!r}")
+          expected = tag[1:]
+
+          root = tomllib.loads(Path("Cargo.toml").read_text())
+          package_version = root["workspace"]["package"]["version"]
+
+          gui_cargo = tomllib.loads(Path("gui/src-tauri/Cargo.toml").read_text())
+          gui_package = json.loads(Path("gui/package.json").read_text())
+          tauri = json.loads(Path("gui/src-tauri/tauri.conf.json").read_text())
+
+          versions = {
+              "workspace": package_version,
+              "gui Cargo": gui_cargo["package"]["version"],
+              "gui package": gui_package["version"],
+              "tauri": tauri["version"],
+          }
+          bad = {name: value for name, value in versions.items() if value != expected}
+          if bad:
+              raise SystemExit(f"release version mismatch: expected {expected}, got {bad}")
+          print(f"release version: {expected}")
+          PY
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+          - name: macos-x86_64
+            os: macos-15-intel
+          - name: macos-arm64
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils \
+            rpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.90.0
+
+      - name: Install frontend dependencies
+        working-directory: gui
+        run: npm install --no-audit --no-fund
+
+      - name: Build CLI
+        run: cargo build -p nero --release
+
+      - name: Package CLI (Unix)
+        if: runner.os != 'Windows'
+        env:
+          RELEASE_NAME: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.name }}
+        run: |
+          mkdir -p release
+          tar -C target/release -czf "release/nero-cli-${RELEASE_NAME}-${PLATFORM}.tar.gz" nero
+
+      - name: Package CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_NAME: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.name }}
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path target/release/nero.exe -DestinationPath "release/nero-cli-$env:RELEASE_NAME-$env:PLATFORM.zip"
+
+      - name: Build GUI
+        working-directory: gui
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+        run: npm run tauri build
+
+      - name: Package GUI bundle (Unix)
+        if: runner.os != 'Windows'
+        env:
+          RELEASE_NAME: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.name }}
+        run: |
+          test -d gui/src-tauri/target/release/bundle
+          tar -C gui/src-tauri/target/release/bundle -czf "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.tar.gz" .
+
+      - name: Package GUI bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_NAME: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.name }}
+        run: |
+          if (-not (Test-Path gui/src-tauri/target/release/bundle)) { throw "Tauri bundle directory missing" }
+          Compress-Archive -Path gui/src-tauri/target/release/bundle/* -DestinationPath "release/nero-gui-$env:RELEASE_NAME-$env:PLATFORM.zip"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" release-assets/* \
+            --verify-tag \
+            --title "Nero ${TAG#v}" \
+            --generate-notes

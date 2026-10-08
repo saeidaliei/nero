@@ -2,13 +2,16 @@
 
 ## 1.0.0
 
-- Added a provider-neutral rclone storage adapter.
-- Added named workspace storage profiles stored without provider credentials.
-- Added `nero storage add`, `storage list`, `storage test`, and `storage remove`.
-- Added `nero backup push`, `backup list`, and `backup pull`.
-- Storage profiles can require age-encrypted backup artifacts.
-- Remote transfers use rclone `copyto` and never use destructive `sync` operations.
-- Added `STORAGE.md` with Mega, S3-compatible, WebDAV, and other rclone workflows.
+This is the first stable Nero release. It includes the full local-first document system, TUI, desktop GUI, editing, backups, encryption, Git helpers, remote storage, CI, and GitHub release automation.
+
+- Added Comrak-powered Markdown rendering with math support.
+- Added `[[wiki links]]`, backlinks, SQLite FTS5 search, file watching, and the Ratatui TUI.
+- Added the Tauri desktop GUI with Markdown editing, split preview, KaTeX, image import, and context navigation.
+- Added portable ZIP backups with manifests, SHA-256 verification, safe restore, and recovery tests.
+- Added age-compatible X25519 encrypted backups and external key storage.
+- Added Git helpers for versioning, remotes, snapshots, push, and pull.
+- Added rclone-backed remote backup storage with named storage profiles.
+- Added GitHub Actions CI and tag-driven cross-platform release automation.
 
 ## 0.9.0
 
