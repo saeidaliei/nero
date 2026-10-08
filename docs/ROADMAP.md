@@ -1,5 +1,9 @@
 # Nero roadmap
 
+## 1.0 hardening
+
+The 1.0 foundation is treated as stable. This pass locks down filesystem boundaries, atomic writes, recovery, deterministic toolchain selection, and renderer consistency before any new product area is considered.
+
 ## 0.1 — foundation
 
 - [x] Rust workspace
@@ -76,7 +80,7 @@
 - [x] workspace-safe image rendering
 - [ ] drag/drop attachments
 - [ ] paste images from the clipboard
-- [ ] heading-aware preview navigation
+- [x] heading-aware preview navigation
 
 ## 0.8 — resilience foundation
 

@@ -1,3 +1,8 @@
+//! Filesystem watching for user-authored Markdown.
+//!
+//! The watcher intentionally ignores Nero's derived metadata directories so a
+//! search-index update does not turn into a recursive application event.
+
 use std::{path::{Path, PathBuf}, sync::mpsc::{self, Receiver}};
 
 use notify::{recommended_watcher, RecursiveMode, Watcher};
@@ -33,6 +38,8 @@ impl Workspace {
     }
 }
 
+// Only user-authored Markdown should trigger reindex/reload events. In particular, the
+// `.nero` SQLite writes must never cause the watcher to wake itself up recursively.
 fn is_user_markdown(path: &Path, root: &Path) -> bool {
     if !path.starts_with(root) {
         return false;

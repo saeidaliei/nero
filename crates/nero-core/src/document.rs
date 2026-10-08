@@ -1,3 +1,9 @@
+//! Markdown parsing and the small Nero-specific document model.
+//!
+//! Comrak is the single Markdown parser for all frontends. Keeping the parsed
+//! document here prevents the GUI, TUI, and CLI from slowly growing different
+//! interpretations of the same note.
+
 use std::collections::BTreeMap;
 
 use comrak::{markdown_to_html, Options};
@@ -65,6 +71,8 @@ pub fn parse(body: &str) -> Document {
     }
 }
 
+// Unsafe HTML remains disabled on purpose. Notes may be opened in the Tauri WebView,
+// so arbitrary raw HTML from a Markdown file should not become executable page content.
 pub fn render_html(body: &str) -> String {
     let mut options = Options::default();
     options.extension.table = true;
@@ -74,6 +82,8 @@ pub fn render_html(body: &str) -> String {
     options.extension.math_latex = true;
     options.extension.wikilinks_title_after_pipe = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
+    options.render.r#unsafe = false;
+    options.render.escape = true;
     markdown_to_html(body, &options)
 }
 
@@ -189,6 +199,13 @@ fn count_dollar_inline(body: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renders_raw_html_as_text() {
+        let document = parse("<script>alert(1)</script>\n");
+        assert!(document.html.contains("&lt;script&gt;"));
+        assert!(!document.html.contains("<script>"));
+    }
 
     #[test]
     fn parses_title_links_labels_tasks_and_math() {

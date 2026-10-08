@@ -1,3 +1,8 @@
+//! Nero's command-line entry point.
+//!
+//! The CLI is intentionally a thin adapter over `nero-core`; it should validate
+//! user-facing arguments and present results without owning document semantics.
+
 use std::{env, io::{self, Write}, path::PathBuf, process::{exit, Command as ProcessCommand}};
 
 use nero_core::{NoteSummary, Result, SearchResult, Workspace};
@@ -106,7 +111,7 @@ fn run() -> Result<()> {
                 "verify" => {
                     let (identity, positional) = parse_identity_flag(values)?;
                     let archive = positional.first().ok_or_else(|| nero_core::NeroError::Message("backup archive path is required".into()))?;
-                    let is_encrypted = PathBuf::from(archive).extension().and_then(|s| s.to_str()) == Some("age");
+                    let is_encrypted = Workspace::backup_is_encrypted(archive)?;
                     let stats = if is_encrypted {
                         Workspace::verify_encrypted_backup(archive, identity.unwrap_or(Workspace::identity_path()?))?
                     } else {
@@ -118,7 +123,7 @@ fn run() -> Result<()> {
                     let (identity, positional) = parse_identity_flag(values)?;
                     let archive = positional.first().ok_or_else(|| nero_core::NeroError::Message("backup archive path is required".into()))?;
                     let destination = positional.get(1).ok_or_else(|| nero_core::NeroError::Message("restore destination is required".into()))?;
-                    let is_encrypted = PathBuf::from(archive).extension().and_then(|s| s.to_str()) == Some("age");
+                    let is_encrypted = Workspace::backup_is_encrypted(archive)?;
                     let stats = if is_encrypted {
                         Workspace::restore_encrypted_backup(archive, destination, identity.unwrap_or(Workspace::identity_path()?))?
                     } else {
@@ -180,7 +185,7 @@ fn run() -> Result<()> {
                     let workspace = Workspace::discover(env::current_dir()?)?;
                     let temporary = env::temp_dir().join(format!("nero-download-{}-{}", std::process::id(), backup_name));
                     let downloaded = workspace.storage_download_file(storage_name, backup_name, &temporary)?;
-                    let encrypted = downloaded.extension().and_then(|s| s.to_str()) == Some("age");
+                    let encrypted = Workspace::backup_is_encrypted(&downloaded)?;
                     let result = if encrypted {
                         workspace.restore_encrypted_backup(
                             &downloaded,
@@ -209,6 +214,9 @@ fn run() -> Result<()> {
             match args.next().as_deref() {
                 Some("generate") => {
                     let force = args.any(|arg| arg == "--force");
+                    if force {
+                        eprintln!("WARNING: replacing the Nero backup identity makes existing encrypted backups unrecoverable with the new identity.");
+                    }
                     let key = Workspace::generate_backup_key(force)?;
                     println!("backup identity: {}", key.identity_path.display());
                     println!("recipient: {}", key.recipient);

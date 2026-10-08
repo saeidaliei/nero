@@ -1,3 +1,9 @@
+//! Tauri application bridge for Nero's desktop frontend.
+//!
+//! Commands in this module translate WebView requests into `nero-core` calls. The
+//! Rust core remains authoritative for filesystem access, parsing, search, and links;
+//! the TypeScript side should not duplicate those rules.
+
 use std::{env, path::PathBuf, sync::Mutex, thread};
 
 use nero_core::{Document, NoteSummary, TaskCounts, WikiLink, Workspace, WorkspaceWatcher};
@@ -130,6 +136,11 @@ fn read_note(query: String, state: State<'_, AppState>) -> Result<DocumentDto, S
 }
 
 #[tauri::command]
+fn render_markdown(source: String) -> Result<String, String> {
+    Ok(nero_core::render_html(&source))
+}
+
+#[tauri::command]
 fn search_notes(query: String, state: State<'_, AppState>) -> Result<Vec<SearchDto>, String> {
     state.workspace.search(&query)
         .map(|results| results.into_iter().map(|result| SearchDto {
@@ -173,6 +184,8 @@ fn read_asset_data_url(source_path: String, reference: String, state: State<'_, 
 }
 
 #[tauri::command]
+// Save through the core so GUI edits get the same atomic-write and workspace-boundary
+// guarantees as CLI/TUI edits. The frontend never writes note files directly.
 fn save_note(query: String, source: String, state: State<'_, AppState>) -> Result<DocumentDto, String> {
     state.workspace.save_note(&query, &source)
         .map(to_document)
@@ -199,6 +212,8 @@ pub fn run() {
         Ok(workspace) => workspace,
         Err(error) => {
             eprintln!("nero-gui: {error}");
+            #[cfg(not(mobile))]
+            std::process::exit(1);
             return;
         }
     };
@@ -245,11 +260,12 @@ pub fn run() {
 }
 
 fn run_builder(builder: tauri::Builder<tauri::Wry>) {
-    builder
+    let result = builder
         .invoke_handler(tauri::generate_handler![
             workspace_info,
             list_notes,
             read_note,
+            render_markdown,
             search_notes,
             backlinks,
             resolve_link,
@@ -260,6 +276,14 @@ fn run_builder(builder: tauri::Builder<tauri::Wry>) {
             today,
             reindex,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Nero GUI");
+        .run(tauri::generate_context!());
+
+    match result {
+        Ok(()) => {}
+        Err(error) => {
+            eprintln!("nero-gui: {error}");
+            #[cfg(not(mobile))]
+            std::process::exit(1);
+        }
+    }
 }

@@ -39,3 +39,9 @@ optional age encryption
 ```
 
 GitHub can host private repositories accessible only to authorized users, but repository/object limits make it better suited to text/history than as a universal large-asset store. GitHub currently enforces a 100 MB single-object limit and recommends Git LFS for larger tracked files. For broader storage, rclone already supports Mega and a large set of other backends, while its `crypt` remote provides client-side encryption before data reaches the remote.
+
+## 1.0 hardening
+
+Nero treats the workspace as a trust boundary. Note resolution rejects absolute and parent-traversal paths, indexing skips symlinks, and file writes use temporary-file replacement paths. The GUI renderer uses Comrak's safe-by-default HTML/link handling before inserting rendered Markdown into the desktop WebView.
+
+Encrypted backup recovery decrypts into OS-managed temporary files that are removed when the operation ends. The live workspace remains plain Markdown; encryption applies to backup artifacts rather than the source files.

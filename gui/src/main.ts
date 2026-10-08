@@ -32,6 +32,7 @@ let searchQuery = '';
 let searchResults: SearchResult[] = [];
 let searchTimer: number | undefined;
 let saveTimer: number | undefined;
+let previewRevision = 0;
 let editorSelection: { start: number; end: number } | null = null;
 
 const esc = (value: string) =>
@@ -424,144 +425,20 @@ function wrapSelection(editor: HTMLTextAreaElement, marker: string) {
   if (viewMode === 'split') updateLivePreview();
 }
 
-function updateLivePreview() {
+async function updateLivePreview() {
   const preview = document.querySelector<HTMLElement>('#live-preview');
-  if (!preview || !current) return;
-  preview.innerHTML = basicLivePreview(draft);
-  renderMath(preview);
-  void hydrateImages(preview, current.note.path);
-  syncPreviewScroll(document.querySelector<HTMLTextAreaElement>('#source-editor')!);
-}
-
-function basicLivePreview(source: string) {
-  const lines = source.split('\n');
-  let html = '';
-  let paragraph: string[] = [];
-  let inCode = false;
-  let codeLines: string[] = [];
-  let listType: 'ul' | 'ol' | null = null;
-  let listItems: string[] = [];
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    html += `<p>${inlinePreview(paragraph.join(' '))}</p>`;
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!listItems.length || !listType) return;
-    html += `<${listType}>${listItems.map((item) => `<li>${inlinePreview(item)}</li>`).join('')}</${listType}>`;
-    listItems = [];
-    listType = null;
-  };
-
-  for (const line of lines) {
-    if (/^\s*```/.test(line)) {
-      if (inCode) {
-        html += `<pre><code>${esc(codeLines.join('\n'))}</code></pre>`;
-        inCode = false;
-        codeLines = [];
-      } else {
-        flushParagraph();
-        flushList();
-        inCode = true;
-      }
-      continue;
-    }
-    if (inCode) {
-      codeLines.push(line);
-      continue;
-    }
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      const level = heading[1].length;
-      html += `<h${level}>${inlinePreview(heading[2])}</h${level}>`;
-      continue;
-    }
-
-    if (/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)) {
-      flushParagraph();
-      flushList();
-      html += '<hr />';
-      continue;
-    }
-
-    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
-    if (bullet) {
-      flushParagraph();
-      if (listType && listType !== 'ul') flushList();
-      listType = 'ul';
-      listItems.push(bullet[1]);
-      continue;
-    }
-
-    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    if (ordered) {
-      flushParagraph();
-      if (listType && listType !== 'ol') flushList();
-      listType = 'ol';
-      listItems.push(ordered[1]);
-      continue;
-    }
-
-    const quote = /^\s*>\s?(.*)$/.exec(line);
-    if (quote) {
-      flushParagraph();
-      flushList();
-      html += `<blockquote>${inlinePreview(quote[1])}</blockquote>`;
-      continue;
-    }
-
-    paragraph.push(line);
+  if (!preview || !current || viewMode !== 'split') return;
+  const revision = ++previewRevision;
+  try {
+    const html = await invoke<string>('render_markdown', { source: draft });
+    if (revision !== previewRevision || viewMode !== 'split') return;
+    preview.innerHTML = html;
+    renderMath(preview);
+    void hydrateImages(preview, current.note.path);
+    syncPreviewScroll(document.querySelector<HTMLTextAreaElement>('#source-editor')!);
+  } catch (error) {
+    if (revision === previewRevision) setStatus(`Preview failed · ${String(error)}`);
   }
-
-  if (inCode) html += `<pre><code>${esc(codeLines.join('\n'))}</code></pre>`;
-  flushParagraph();
-  flushList();
-  return html;
-}
-
-function inlinePreview(value: string) {
-  const mathPattern = /\$\$([\s\S]*?)\$\$|\$([^$\n]+)\$/g;
-  let html = '';
-  let last = 0;
-  for (const match of value.matchAll(mathPattern)) {
-    const index = match.index ?? 0;
-    html += formatPlainInline(value.slice(last, index));
-    if (match[1] !== undefined) {
-      html += `<span data-math-style="display">${esc(match[1].trim())}</span>`;
-    } else {
-      html += `<span data-math-style="inline">${esc(match[2].trim())}</span>`;
-    }
-    last = index + match[0].length;
-  }
-  html += formatPlainInline(value.slice(last));
-  return html;
-}
-
-function formatPlainInline(value: string) {
-  let text = esc(value);
-  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, alt, src) =>
-    `<img class="live-asset" data-nero-asset-src="${esc(src)}" alt="${esc(alt)}" />`,
-  );
-  text = text.replace(/\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g, (_m, target, heading, label) =>
-    `<span class="wiki-live">${esc(label ?? target)}${heading ? `#${esc(heading)}` : ''}</span>`,
-  );
-  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_m, label, href) =>
-    `<a href="${esc(href)}" target="_blank" rel="noreferrer">${esc(label)}</a>`,
-  );
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  return text;
 }
 
 async function hydrateImages(root: Element, sourcePath: string) {
@@ -660,7 +537,10 @@ async function toggleEditor() {
     renderReader();
     return;
   }
-  if (dirty) await saveCurrentNote();
+  if (dirty) {
+    await saveCurrentNote();
+    if (dirty) return;
+  }
   viewMode = 'read';
   renderReader();
   markDirty(false);
@@ -678,6 +558,35 @@ function renderMath(root: Element) {
   });
 }
 
+function headingFragmentKey(value: string) {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    // Keep the original fragment when it is not valid percent-encoding.
+  }
+  return decoded
+    .replace(/^#/, '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+function scrollToFragment(fragment: string) {
+  if (!fragment) return;
+  const reader = document.querySelector<HTMLElement>('#reader');
+  if (!reader) return;
+  const desired = headingFragmentKey(fragment);
+  const direct = reader.querySelector<HTMLElement>(`[id="${CSS.escape(fragment.replace(/^#/, ''))}"]`);
+  const heading = direct ?? Array.from(reader.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')).find((element) => {
+    return headingFragmentKey(element.id || element.textContent || '') === desired;
+  });
+  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function wireWikiLinks(root: Element) {
   root.querySelectorAll<HTMLAnchorElement>('a[data-wikilink="true"]').forEach((anchor) => {
     anchor.addEventListener('click', async (event) => {
@@ -689,8 +598,11 @@ function wireWikiLinks(root: Element) {
           sourcePath: current.note.path,
           target,
         });
-        if (resolved) await openNote(resolved.path);
-        else setStatus(`Broken link: ${target}`);
+        if (resolved) {
+          const fragment = target.split('#')[1] ?? '';
+          await openNote(resolved.path);
+          if (fragment) window.requestAnimationFrame(() => scrollToFragment(fragment));
+        } else setStatus(`Broken link: ${target}`);
       } catch (error) {
         setStatus(String(error));
       }

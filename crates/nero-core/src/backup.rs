@@ -1,7 +1,14 @@
+//! Portable workspace snapshots and integrity verification.
+//!
+//! Backups contain source files plus a manifest of sizes and SHA-256 digests.
+//! Derived state such as `.nero/` and `.git/` stays out of the archive so a restore
+//! produces a clean, portable workspace.
+
 use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::{NeroError, Result, Workspace};
@@ -59,12 +66,12 @@ impl Workspace {
             ));
         }
 
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let output = fs::File::create(&destination)?;
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
+        let temp = NamedTempFile::new_in(parent)?;
+        let output = temp.reopen()?;
         let (_output, manifest) = write_backup_archive(self, output)?;
+        temp.persist(&destination).map_err(|error| NeroError::Io(error.error))?;
         Ok((destination, manifest))
     }
 
@@ -267,6 +274,8 @@ fn unix_now() -> u64 {
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
 }
+// Never trust archive entry names: rejecting absolute paths, prefixes, and `..` prevents
+// a malicious ZIP from writing outside the restore destination (Zip Slip).
 fn safe_archive_path(path: &str) -> Result<PathBuf> {
     let raw = Path::new(path);
     if raw.is_absolute() {

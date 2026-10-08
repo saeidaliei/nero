@@ -1,3 +1,9 @@
+//! Provider-neutral remote backup transport through the user's `rclone`.
+//!
+//! Nero stores only target names in workspace metadata. Credentials and provider
+//! authentication remain in rclone's own configuration, keeping Nero independent
+//! from any particular cloud service.
+
 use std::{
     env,
     fs,
@@ -7,7 +13,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{NeroError, Result, Workspace};
+use crate::{atomic_write, NeroError, Result, Workspace};
 
 const STORAGE_CONFIG_VERSION: u32 = 1;
 const STORAGE_CONFIG_NAME: &str = "storage.json";
@@ -145,6 +151,8 @@ impl Workspace {
         let source = local_file.to_string_lossy().into_owned();
         let destination = join_remote_path(&remote.target, file_name);
         ensure_rclone()?;
+        // `--immutable` makes a snapshot effectively append-only: a second upload cannot
+        // silently replace an existing backup, and `copyto` avoids sync-style deletions.
         run_rclone(&["copyto", &source, &destination, "--checksum", "--immutable"])?;
         Ok(destination)
     }
@@ -188,19 +196,9 @@ impl Workspace {
 
     fn save_storage_config(&self, config: &StorageConfig) -> Result<()> {
         let path = self.storage_config_path();
-        let temporary = path.with_extension("json.tmp");
         let encoded = serde_json::to_vec_pretty(config)
             .map_err(|error| NeroError::Message(format!("could not serialize storage configuration: {error}")))?;
-        fs::write(&temporary, encoded)?;
-        match fs::rename(&temporary, &path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                fs::remove_file(&path)?;
-                fs::rename(temporary, path)?;
-            }
-            Err(error) => return Err(error.into()),
-        }
-        Ok(())
+        atomic_write(&path, &encoded)
     }
 }
 

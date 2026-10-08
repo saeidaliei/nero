@@ -2,7 +2,24 @@
 
 ## 1.0.0
 
-This is the first stable Nero release. It includes the full local-first document system, TUI, desktop GUI, editing, backups, encryption, Git helpers, remote storage, CI, and GitHub release automation.
+- Documentation is consolidated under `docs/`, with dedicated usage, Markdown-format, development, GUI, security, recovery, backup, storage, CI, roadmap, and changelog guides.
+- Source files include focused comments around filesystem boundaries, atomic writes, encryption, backup safety, indexing, Git argument validation, and Tauri/core boundaries.
+
+This is the first stable Nero release. The final hardening pass tightened workspace boundaries, save/recovery safety, search/index reliability, and GUI rendering consistency.
+
+- Refused absolute/path-traversal note lookups and symlinked notes; indexing no longer follows workspace symlinks.
+- Note saves, new notes, daily notes, backup snapshots, encrypted backups, and backup identity files now use safer temporary-file replacement paths.
+- Local daily notes now use the machine's local calendar date instead of UTC.
+- Search snippets handle Unicode case-folding without slicing invalid UTF-8 boundaries.
+- SQLite indexing now has a schema version, WAL mode, normal synchronous mode, and a busy timeout.
+- GUI split preview now uses the same Comrak renderer as normal reading mode.
+- Markdown rendering explicitly remains safe for raw HTML and dangerous links before content reaches the WebView.
+- Encrypted backup detection now inspects the age header instead of trusting the filename extension; encrypted recovery uses OS-managed temporary files.
+- Git branch arguments are rejected when they look like command-line options or contain whitespace.
+- Storage configuration writes now use the same atomic file replacement path as notes and keys.
+- Workspace filename/path lookup now respects native filesystem case semantics while keeping title matching friendly.
+- Heading fragments in `[[Note#Heading]]` links now navigate to the matching heading in the desktop reader.
+- The Rust toolchain is pinned to 1.90.0 and Node development to 24 for consistent local/CI environments.
 
 - Added Comrak-powered Markdown rendering with math support.
 - Added `[[wiki links]]`, backlinks, SQLite FTS5 search, file watching, and the Ratatui TUI.

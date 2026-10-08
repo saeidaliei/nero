@@ -1,3 +1,8 @@
+//! Keyboard-first terminal interface for the Nero core.
+//!
+//! The TUI owns presentation state such as selection, panels, overlays, and scroll
+//! position. Workspace, Markdown, search, and link behavior remains in `nero-core`.
+
 mod markdown;
 
 use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, time::Duration};

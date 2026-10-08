@@ -1,8 +1,15 @@
-use std::{env, fs, io::Write, path::{Path, PathBuf}, str::FromStr, time::{SystemTime, UNIX_EPOCH}};
+//! Age-compatible encryption for backup snapshots.
+//!
+//! Encryption deliberately happens outside the live workspace: notes remain plain
+//! Markdown while only exported backup snapshots are encrypted. The private age
+//! identity is stored in the user configuration directory, never in `.nero/`.
+
+use std::{env, fs, io::Write, path::{Path, PathBuf}, str::FromStr};
 
 use age::{secrecy::ExposeSecret, Decryptor, Encryptor};
 
-use crate::{backup, BackupManifest, BackupStats, NeroError, Result, Workspace};
+use crate::{backup, atomic_write, BackupManifest, BackupStats, NeroError, Result, Workspace};
+use tempfile::{NamedTempFile, TempDir};
 
 const CONFIG_ENV: &str = "NERO_CONFIG_DIR";
 const IDENTITY_FILE: &str = "identity.txt";
@@ -48,8 +55,8 @@ impl Workspace {
         let secret = identity_text.expose_secret().to_owned();
         let recipient = identity.to_public().to_string();
 
-        fs::write(&identity_path, format!("{secret}\n"))?;
-        fs::write(&recipient_path, format!("{recipient}\n"))?;
+        atomic_write(&identity_path, format!("{secret}\n").as_bytes())?;
+        atomic_write(&recipient_path, format!("{recipient}\n").as_bytes())?;
         set_private_file_permissions(&identity_path)?;
 
         Ok(BackupKeyInfo { identity_path, recipient })
@@ -91,7 +98,9 @@ impl Workspace {
         let encryptor = Encryptor::with_recipients(std::iter::once(&recipient as &dyn age::Recipient))
             .map_err(|error| NeroError::Message(format!("could not create age encryptor: {error}")))?;
 
-        let output = fs::File::create(&destination)?;
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let temp = NamedTempFile::new_in(parent)?;
+        let output = temp.reopen()?;
         let encrypted = encryptor
             .wrap_output(output)
             .map_err(|error| NeroError::Message(format!("could not initialize encrypted backup: {error}")))?;
@@ -99,6 +108,7 @@ impl Workspace {
         encrypted
             .finish()
             .map_err(|error| NeroError::Message(format!("could not finalize encrypted backup: {error}")))?;
+        temp.persist(&destination).map_err(|error| NeroError::Io(error.error))?;
 
         Ok((destination, manifest))
     }
@@ -107,13 +117,9 @@ impl Workspace {
         archive: impl AsRef<Path>,
         identity_path: impl AsRef<Path>,
     ) -> Result<BackupStats> {
-        let temp = temporary_path("verify", "zip");
-        let result = match decrypt_age_to_file(archive.as_ref(), identity_path.as_ref(), &temp) {
-            Ok(()) => Self::verify_backup(&temp),
-            Err(error) => Err(error),
-        };
-        let _ = fs::remove_file(&temp);
-        result
+        let temp = NamedTempFile::new()?;
+        decrypt_age_to_file(archive.as_ref(), identity_path.as_ref(), temp.path())?;
+        Self::verify_backup(temp.path())
     }
 
     pub fn restore_encrypted_backup(
@@ -121,13 +127,13 @@ impl Workspace {
         destination: impl AsRef<Path>,
         identity_path: impl AsRef<Path>,
     ) -> Result<BackupStats> {
-        let temp = temporary_path("restore", "zip");
-        let result = match decrypt_age_to_file(archive.as_ref(), identity_path.as_ref(), &temp) {
-            Ok(()) => Self::restore_backup(&temp, destination),
-            Err(error) => Err(error),
-        };
-        let _ = fs::remove_file(&temp);
-        result
+        let temp = NamedTempFile::new()?;
+        decrypt_age_to_file(archive.as_ref(), identity_path.as_ref(), temp.path())?;
+        Self::restore_backup(temp.path(), destination)
+    }
+
+    pub fn backup_is_encrypted(archive: impl AsRef<Path>) -> Result<bool> {
+        is_age_backup(archive.as_ref())
     }
 
     pub fn recovery_test_backup(
@@ -135,19 +141,15 @@ impl Workspace {
         identity_path: Option<PathBuf>,
     ) -> Result<BackupStats> {
         let archive = archive.as_ref();
-        let is_encrypted = archive.extension().and_then(|value| value.to_str()) == Some("age");
-        let restore_dir = temporary_path("recovery", "dir");
-        fs::create_dir_all(&restore_dir)?;
+        let is_encrypted = is_age_backup(archive)?;
+        let restore_dir = TempDir::new()?;
 
-        let result = if is_encrypted {
+        if is_encrypted {
             let identity_path = identity_path.unwrap_or(Self::identity_path()?);
-            Self::restore_encrypted_backup(archive, &restore_dir, identity_path)
+            Self::restore_encrypted_backup(archive, restore_dir.path(), identity_path)
         } else {
-            Self::restore_backup(archive, &restore_dir)
-        };
-
-        let _ = fs::remove_dir_all(&restore_dir);
-        result
+            Self::restore_backup(archive, restore_dir.path())
+        }
     }
 }
 
@@ -159,6 +161,8 @@ fn load_identity(path: &Path) -> Result<age::x25519::Identity> {
         .map_err(|error| NeroError::Message(format!("invalid age identity {}: {error}", path.display())))
 }
 
+// Decryption streams into a temporary/plain ZIP file so large backups never need to fit
+// in memory. Callers keep that file in a private temp directory and remove it afterward.
 fn decrypt_age_to_file(archive: &Path, identity_path: &Path, destination: &Path) -> Result<()> {
     let identity = load_identity(identity_path)?;
     let input = fs::File::open(archive)?;
@@ -167,9 +171,10 @@ fn decrypt_age_to_file(archive: &Path, identity_path: &Path, destination: &Path)
     let mut reader = decryptor
         .decrypt(std::iter::once(&identity as &dyn age::Identity))
         .map_err(|error| NeroError::Message(format!("could not decrypt Nero backup: {error}")))?;
-    let mut output = fs::File::create(destination)?;
+    let mut output = fs::OpenOptions::new().write(true).truncate(true).open(destination)?;
     std::io::copy(&mut reader, &mut output)?;
     output.flush()?;
+    output.sync_all()?;
     Ok(())
 }
 
@@ -216,9 +221,11 @@ fn normalize_destination(destination: &Path) -> PathBuf {
     }
 }
 
-fn temporary_path(kind: &str, extension: &str) -> PathBuf {
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    env::temp_dir().join(format!("nero-{kind}-{}-{stamp}.{extension}", std::process::id()))
+fn is_age_backup(path: &Path) -> Result<bool> {
+    let mut file = fs::File::open(path)?;
+    let mut header = [0u8; 32];
+    let read = std::io::Read::read(&mut file, &mut header)?;
+    Ok(header[..read].starts_with(b"age-encryption.org/v1\n"))
 }
 
 fn set_private_file_permissions(path: &Path) -> Result<()> {

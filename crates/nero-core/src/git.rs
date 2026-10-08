@@ -1,3 +1,9 @@
+//! Small, explicit wrappers around the system `git` executable.
+//!
+//! Nero does not reimplement Git. The wrapper only provides safe, predictable
+//! note-oriented commands while leaving remotes, credentials, signing, and Git
+//! configuration to the normal Git installation.
+
 use std::{path::Path, process::{Command, Output}};
 
 use crate::{NeroError, Result, Workspace};
@@ -50,6 +56,7 @@ impl Workspace {
     pub fn git_push(&self, remote: &str, branch: Option<&str>) -> Result<String> {
         validate_git_name(remote)?;
         let branch = branch.map(str::trim).filter(|value| !value.is_empty());
+        if let Some(branch) = branch { validate_git_branch(branch)?; }
         match branch {
             Some(branch) => git_stdout(run_git(&self.root(), &["push", remote, branch])?),
             None => git_stdout(run_git(&self.root(), &["push", remote])?),
@@ -59,6 +66,7 @@ impl Workspace {
     pub fn git_pull(&self, remote: &str, branch: Option<&str>) -> Result<String> {
         validate_git_name(remote)?;
         let branch = branch.map(str::trim).filter(|value| !value.is_empty());
+        if let Some(branch) = branch { validate_git_branch(branch)?; }
         match branch {
             Some(branch) => git_stdout(run_git(&self.root(), &["pull", remote, branch])?),
             None => git_stdout(run_git(&self.root(), &["pull", remote])?),
@@ -96,6 +104,15 @@ fn validate_git_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+// Nero only passes a branch name to `git push/pull`; reject option-looking input so a
+// caller cannot smuggle flags such as `--force` through what should be a data argument.
+fn validate_git_branch(branch: &str) -> Result<()> {
+    if branch.is_empty() || branch.starts_with('-') || branch.chars().any(char::is_whitespace) {
+        return Err(NeroError::Message(format!("invalid git branch: {branch}")));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +123,8 @@ mod tests {
         assert!(validate_git_name("origin/main").is_err());
         assert!(validate_git_name(" origin").is_err());
         assert!(validate_git_name("origin").is_ok());
+        assert!(validate_git_branch("main").is_ok());
+        assert!(validate_git_branch("--force").is_err());
+        assert!(validate_git_branch("main feature").is_err());
     }
 }

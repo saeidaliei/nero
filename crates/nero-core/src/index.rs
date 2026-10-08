@@ -1,8 +1,15 @@
-use std::{collections::{HashMap, HashSet}, fs, path::Path};
+//! Disposable SQLite/FTS5 index built from the Markdown workspace.
+//!
+//! The database is a cache, not user data. If its schema changes or the file is
+//! deleted, the workspace remains intact and the index is rebuilt from source.
+
+use std::{collections::{HashMap, HashSet}, fs, path::Path, time::Duration};
 
 use rusqlite::{params, Connection};
 
 use crate::{document, NoteSummary, Result, SearchResult, Workspace};
+
+const SCHEMA_VERSION: i64 = 1;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS notes (
@@ -39,7 +46,16 @@ impl Index {
             fs::create_dir_all(parent)?;
         }
         let connection = Connection::open(path)?;
+        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        // The index is disposable. A version mismatch is cheaper and safer to handle by
+        // rebuilding it than by maintaining migrations for a cache that can be regenerated.
+        if version != SCHEMA_VERSION {
+            connection.execute_batch("DROP TABLE IF EXISTS note_search; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS notes;")?;
+        }
         connection.execute_batch(SCHEMA)?;
+        connection.execute_batch(&format!("PRAGMA user_version={SCHEMA_VERSION};"))?;
         Ok(Self { connection })
     }
 
