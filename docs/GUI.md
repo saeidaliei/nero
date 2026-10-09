@@ -50,3 +50,7 @@ npm run build
 ```
 
 Tauri packaging is covered by the GitHub release workflow. See [CI and releases](CI.md).
+
+## Application icons
+
+Tauri's compile-time context expects `gui/src-tauri/icons/icon.png` to exist even when running the development app. Keep the PNG, standard-size PNGs, `.ico`, and `.icns` in version control so development builds and Windows/macOS/Linux bundles do not depend on a locally generated asset. `nero-icon.svg` is the editable vector source for the artwork.

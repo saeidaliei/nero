@@ -206,6 +206,7 @@ pub fn run() {
             eprintln!("nero-gui: {error}");
             #[cfg(not(mobile))]
             std::process::exit(1);
+            #[cfg(mobile)]
             return;
         }
     };

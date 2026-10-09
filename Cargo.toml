@@ -5,6 +5,10 @@ members = [
     "crates/nero",
     "crates/nero-tui",
 ]
+exclude = [
+    # The Tauri desktop app is built independently, but reuses nero-core by path.
+    "gui/src-tauri",
+]
 
 [workspace.package]
 edition = "2024"

@@ -129,3 +129,9 @@ Nero's document engine milestone.
 - Added `render`, `reindex`, and `watch` commands
 - Added the first Ratatui TUI reader shell
 - Moved workspace metadata from legacy `.note` to `.nero` (legacy discovery remains supported)
+
+### 1.0.0 build fixes (post-test)
+
+- Added the Tauri app icon source and generated PNG/ICO/ICNS variants required by development and desktop bundle builds.
+- Declared the bundle icon set explicitly in `gui/src-tauri/tauri.conf.json`.
+- Removed an unreachable `return` warning in the non-mobile GUI startup error path while preserving the mobile return path.
