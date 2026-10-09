@@ -88,7 +88,7 @@ The CLI is scriptable and should never require a UI.
 
 ### TUI
 
-The TUI is a keyboard-first reader/browser. Editing initially delegates to `$EDITOR` rather than embedding an editor.
+The TUI is a keyboard-first reader/browser. Press `e` or run `:edit` to hand the selected Markdown file to `$EDITOR`; Nero temporarily restores the normal terminal, then re-enters the TUI and refreshes the index when the editor exits. Editing remains delegated to the user’s editor rather than embedding another editing engine.
 
 ### GUI
 
@@ -191,3 +191,8 @@ Remote object storage is intentionally not coupled to the age implementation. Th
 Nero delegates transport to the external `rclone` executable instead of embedding provider SDKs. A workspace stores only named target paths and an encrypted-backup policy in `.nero/storage.json`; it never stores provider passwords, OAuth tokens, or API keys there.
 
 Uploads use `rclone copyto` for a single backup object. Nero intentionally does not use `rclone sync` for backups because backup transport must not delete unrelated objects on the destination.
+
+
+## User-level workspace configuration
+
+The CLI stores default/named workspace paths in a small user config outside each notes directory. Explicit `--workspace`/`-w` and `NERO_WORKSPACE` overrides take precedence; otherwise local workspace discovery comes before the saved default, which acts as a fallback in arbitrary directories. The config contains paths and names only; it is not a second source of note content and does not travel with a workspace backup.

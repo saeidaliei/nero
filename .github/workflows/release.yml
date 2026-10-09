@@ -157,7 +157,7 @@ jobs:
         working-directory: gui
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
-        run: npm run tauri build
+        run: npm run tauri:build
 
       - name: Package GUI bundle (Unix)
         if: runner.os != 'Windows'

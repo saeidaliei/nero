@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0 maintenance notes
+
+- Reworked the root README around real features, installation, a short quick start, common commands, and links to the documentation set.
+- Added persistent user-level workspace configuration: set a default once, register named workspaces, switch defaults, and use `-w`/`--workspace` for one-command overrides.
+- Added a CLI regression test for workspace option extraction and smoke coverage for commands from outside the workspace directory.
+- Added a workspace configuration guide and a reminders design document. Reminder notifications are documented as planned, not presented as already implemented.
+
+- Add the `e` key and `:edit` command to the TUI. They temporarily release the terminal to `$EDITOR`, restore the TUI afterward, and reload the edited note.
+- Document TUI editing and the `$EDITOR` / `$VISUAL` setup.
+
+- Document the npm-first Tauri CLI setup and add `tauri:dev`, `tauri:build`, and `tauri:info` scripts.
+- Use `npm install` until a generated and committed `package-lock.json` is available; do not recommend `npm ci` without a lockfile.
+
+
 ## 1.0.0
 
 Build/test fixes applied after the first user Cargo run:

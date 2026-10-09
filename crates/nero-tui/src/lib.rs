@@ -2,7 +2,11 @@ mod markdown;
 
 use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use nero_core::{NoteSummary, Result, Workspace, WorkspaceWatcher};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -44,6 +48,7 @@ struct CommandSpec {
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "new", description: "create a Markdown note", usage: "new <title>" },
     CommandSpec { name: "open", description: "open a note", usage: "open <note>" },
+    CommandSpec { name: "edit", description: "edit the selected note in $EDITOR", usage: "edit" },
     CommandSpec { name: "search", description: "search the workspace", usage: "search <query>" },
     CommandSpec { name: "today", description: "open today's daily note", usage: "today" },
     CommandSpec { name: "reindex", description: "refresh the search index", usage: "reindex" },
@@ -135,6 +140,63 @@ impl App {
         self.scroll = 0;
         self.push_recent(note.summary);
         self.refresh_side_panel()?;
+        Ok(())
+    }
+
+    /// Temporarily release the TUI terminal so the user's normal terminal editor can run.
+    /// Always restore raw mode and the alternate screen before returning to the TUI.
+    fn edit_selected(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        let Some(path) = self.selected_path.clone() else {
+            self.status = "No note selected to edit".into();
+            return Ok(());
+        };
+
+        terminal.show_cursor()?;
+        execute!(io::stdout(), LeaveAlternateScreen)?;
+        if let Err(error) = disable_raw_mode() {
+            // Don't strand the user's terminal outside Nero if raw-mode shutdown fails.
+            let _ = enable_raw_mode();
+            let _ = execute!(io::stdout(), EnterAlternateScreen);
+            let _ = terminal.clear();
+            let _ = terminal.hide_cursor();
+            return Err(error);
+        }
+
+        let query = path.to_string_lossy().into_owned();
+        let editor_result = self.workspace.edit(&query);
+
+        // Restore the TUI even when $EDITOR is missing or the editor fails to launch.
+        let raw_mode_result = enable_raw_mode();
+        let screen_result = execute!(io::stdout(), EnterAlternateScreen);
+        let clear_result = terminal.clear();
+        let hide_cursor_result = terminal.hide_cursor();
+        raw_mode_result?;
+        screen_result?;
+        clear_result?;
+        hide_cursor_result?;
+
+        match editor_result {
+            Ok(exit_status) => {
+                // An editor can change files outside Nero's own save path, so rebuild the
+                // disposable index and reload the selected note once the editor exits.
+                if let Err(error) = self.workspace.reindex() {
+                    self.status = format!("Edited {}, but reindex failed: {error}", path.display());
+                    return Ok(());
+                }
+                if let Err(error) = self.refresh_notes() {
+                    self.status = format!("Edited {}, but reload failed: {error}", path.display());
+                    return Ok(());
+                }
+                self.status = if exit_status.success() {
+                    format!("Edited {}", path.display())
+                } else {
+                    format!("Editor exited with status {exit_status}")
+                };
+            }
+            Err(error) => {
+                self.status = error.to_string();
+            }
+        }
         Ok(())
     }
 
@@ -451,7 +513,7 @@ impl App {
             terminal.draw(|frame| draw(frame, self))?;
             self.poll_watcher().map_err(to_io)?;
             if event::poll(Duration::from_millis(75))? {
-                if handle_event(self)? {
+                if handle_event(self, terminal)? {
                     break Ok(());
                 }
             }
@@ -586,7 +648,7 @@ fn draw_side(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let text = match app.input_mode {
         InputMode::Normal => format!(
-            "{}  ·  j/k navigate  / search  : commands  b links  c context  r recent  tab side  q quit",
+            "{}  ·  j/k navigate  e edit  / search  : commands  b links  c context  r recent  tab side  q quit",
             app.status
         ),
         InputMode::Search => format!("/{}  ·  Enter search  Esc cancel", app.input),
@@ -642,7 +704,7 @@ fn draw_command_overlay(frame: &mut Frame, app: &App) {
     );
 }
 
-fn handle_event(app: &mut App) -> io::Result<bool> {
+fn handle_event(app: &mut App, terminal: &mut DefaultTerminal) -> io::Result<bool> {
     let Event::Key(key) = event::read()? else { return Ok(false); };
     if key.kind != KeyEventKind::Press {
         return Ok(false);
@@ -650,12 +712,13 @@ fn handle_event(app: &mut App) -> io::Result<bool> {
 
     match app.input_mode {
         InputMode::Search => return handle_search_input(app, key),
-        InputMode::Command => return handle_command_input(app, key),
+        InputMode::Command => return handle_command_input(app, terminal, key),
         InputMode::Normal => {}
     }
 
     match key.code {
         KeyCode::Char('q') => return Ok(true),
+        KeyCode::Char('e') => app.edit_selected(terminal)?,
         KeyCode::Down | KeyCode::Char('j') => {
             if app.side_mode == SideMode::None { app.move_selection(1).map_err(to_io)?; } else { app.move_side_selection(1); }
         }
@@ -724,7 +787,7 @@ fn handle_search_input(app: &mut App, key: crossterm::event::KeyEvent) -> io::Re
     Ok(false)
 }
 
-fn handle_command_input(app: &mut App, key: crossterm::event::KeyEvent) -> io::Result<bool> {
+fn handle_command_input(app: &mut App, terminal: &mut DefaultTerminal, key: crossterm::event::KeyEvent) -> io::Result<bool> {
     let matches = app.filtered_commands();
     match key.code {
         KeyCode::Esc => {
@@ -742,6 +805,12 @@ fn handle_command_input(app: &mut App, key: crossterm::event::KeyEvent) -> io::R
                 app.input = command.name.to_owned();
             } else if matches!(raw.as_str(), "new" | "open" | "search") {
                 app.input.push(' ');
+                return Ok(false);
+            }
+            if app.input.trim().trim_start_matches(':').trim() == "edit" {
+                app.input.clear();
+                app.input_mode = InputMode::Normal;
+                app.edit_selected(terminal)?;
                 return Ok(false);
             }
             if app.execute_command().map_err(to_io)? { return Ok(true); }

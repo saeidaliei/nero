@@ -7,11 +7,11 @@ The desktop frontend lives in `gui/` and uses Tauri 2 with a deliberately small 
 From `gui/`:
 
 ```bash
-pnpm install
-NERO_WORKSPACE=~/notes pnpm tauri dev
+npm install --include=dev
+NERO_WORKSPACE="$HOME/notes" npm run tauri:dev
 ```
 
-The workspace can also be discovered from the current working directory when `.nero/` exists.
+For normal use, run `nero gui` from any directory after configuring `nero workspace set ~/notes`; Nero passes the selected workspace to the GUI. `NERO_WORKSPACE` can override the selected workspace for scripts. When launching the development app directly, set `NERO_WORKSPACE` as shown above. See [Workspace configuration](WORKSPACES.md).
 
 ## Responsibilities
 
@@ -44,7 +44,7 @@ Imported images are copied into `assets/` and referenced with normal Markdown. T
 ## Build
 
 ```bash
-npm ci
+npm install --include=dev
 npx tsc --noEmit
 npm run build
 ```

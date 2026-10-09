@@ -1,5 +1,7 @@
 use std::{env, io::{self, Write}, path::PathBuf, process::{exit, Command as ProcessCommand}};
 
+mod config;
+
 use nero_core::{NoteSummary, Result, SearchResult, Workspace};
 
 fn main() {
@@ -10,65 +12,72 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut args = env::args().skip(1);
+    // Extract the global selector before parsing subcommands, so `--workspace`
+    // works both before and after the command (for example `nero -w work tui`).
+    let mut raw_args = env::args().skip(1).collect::<Vec<_>>();
+    let workspace_override = extract_workspace_option(&mut raw_args)?;
+    let mut args = raw_args.into_iter();
     let command = args.next().unwrap_or_else(|| "help".into());
 
     match command.as_str() {
         "help" | "--help" | "-h" => print_help(),
         "version" | "--version" => println!("nero {}", env!("CARGO_PKG_VERSION")),
         "init" => {
-            let root = args.next().map(PathBuf::from).unwrap_or(env::current_dir()?);
+            let root = args.next().map(PathBuf::from)
+                .or_else(|| workspace_override.clone().map(PathBuf::from))
+                .unwrap_or(env::current_dir()?);
             let workspace = Workspace::init(root)?;
             println!("initialized Nero workspace at {}", workspace.root().display());
         }
+        "workspace" | "workspaces" => handle_workspace_command(args, workspace_override.as_deref())?,
         "new" => {
             let title = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let note = workspace.create_note(&title)?;
             println!("created {}", note.path.display());
         }
         "list" | "ls" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             print_notes(workspace.list_notes()?);
         }
         "open" => {
             let query = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let note = workspace.read_note(&query)?;
             println!("{}\n\n{}", note.summary.title, note.document.source.trim_end());
         }
         "edit" => {
             let query = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let status = workspace.edit(&query)?;
             if !status.success() { exit(status.code().unwrap_or(1)); }
         }
         "find" | "search" => {
             let query = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             print_search(workspace.search(&query)?);
         }
         "backlinks" => {
             let query = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             print_notes(workspace.backlinks(&query)?);
         }
         "today" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             println!("{}", workspace.today()?.path.display());
         }
         "render" => {
             let query = join_args(args)?;
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             print!("{}", workspace.render_note_html(&query)?);
         }
         "reindex" | "index" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let stats = workspace.reindex()?;
             println!("index refreshed: {} updated, {} removed", stats.indexed, stats.removed);
         }
         "watch" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let (_watcher, events) = workspace.watch()?;
             println!("watching {} (Ctrl-C to stop)", workspace.root().display());
             for paths in events {
@@ -81,7 +90,7 @@ fn run() -> Result<()> {
             let values = args.collect::<Vec<_>>();
             match subcommand.as_str() {
                 "create" => {
-                    let workspace = Workspace::discover(env::current_dir()?)?;
+                    let workspace = selected_workspace(workspace_override.as_deref())?;
                     let (encrypt, identity, positional) = parse_backup_flags(values)?;
                     let default_extension = if encrypt { "age" } else { "zip" };
                     let destination = positional.first().map(PathBuf::from).unwrap_or_else(|| {
@@ -129,7 +138,7 @@ fn run() -> Result<()> {
                 "push" => {
                     let (force_encrypt, identity, positional) = parse_backup_push_flags(values)?;
                     let storage_name = positional.first().ok_or_else(|| nero_core::NeroError::Message("storage remote name is required".into()))?;
-                    let workspace = Workspace::discover(env::current_dir()?)?;
+                    let workspace = selected_workspace(workspace_override.as_deref())?;
                     let remote = workspace.storage_get(storage_name)?;
                     let encrypt = remote.encrypt_backups || force_encrypt;
                     let extension = if encrypt { "age" } else { "zip" };
@@ -162,7 +171,7 @@ fn run() -> Result<()> {
                 }
                 "list" => {
                     let storage_name = values.first().ok_or_else(|| nero_core::NeroError::Message("storage remote name is required".into()))?;
-                    let workspace = Workspace::discover(env::current_dir()?)?;
+                    let workspace = selected_workspace(workspace_override.as_deref())?;
                     let backups = workspace.storage_list_backups(storage_name)?;
                     if backups.is_empty() {
                         println!("No remote backups.");
@@ -177,7 +186,7 @@ fn run() -> Result<()> {
                     let storage_name = positional.first().ok_or_else(|| nero_core::NeroError::Message("storage remote name is required".into()))?;
                     let backup_name = positional.get(1).ok_or_else(|| nero_core::NeroError::Message("remote backup filename is required".into()))?;
                     let destination = positional.get(2).ok_or_else(|| nero_core::NeroError::Message("restore destination is required".into()))?;
-                    let workspace = Workspace::discover(env::current_dir()?)?;
+                    let workspace = selected_workspace(workspace_override.as_deref())?;
                     let temporary = env::temp_dir().join(format!("nero-download-{}-{}", std::process::id(), backup_name));
                     let downloaded = workspace.storage_download_file(storage_name, backup_name, &temporary)?;
                     let encrypted = Workspace::backup_is_encrypted(&downloaded)?;
@@ -232,7 +241,7 @@ fn run() -> Result<()> {
         }
         "storage" | "remote" => {
             let subcommand = args.next().unwrap_or_else(|| "help".into());
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             match subcommand.as_str() {
                 "add" => {
                     let values = args.collect::<Vec<_>>();
@@ -268,7 +277,7 @@ fn run() -> Result<()> {
         }
         "git" => {
             let subcommand = args.next().unwrap_or_else(|| "help".into());
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             match subcommand.as_str() {
                 "init" => print!("{}", workspace.git_init()?),
                 "status" => {
@@ -304,11 +313,11 @@ fn run() -> Result<()> {
             }
         }
         "doctor" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             for line in workspace.doctor()? { println!("{line}"); }
         }
         "gui" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             let status = ProcessCommand::new("nero-gui")
                 .env("NERO_WORKSPACE", workspace.root())
                 .status()
@@ -318,13 +327,148 @@ fn run() -> Result<()> {
             if !status.success() { exit(status.code().unwrap_or(1)); }
         }
         "tui" => {
-            let workspace = Workspace::discover(env::current_dir()?)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
             nero_tui::run(workspace).map_err(nero_core::NeroError::Io)?;
         }
         other => return Err(nero_core::NeroError::Message(format!("unknown command `{other}` — run `nero help`"))),
     }
 
     io::stdout().flush().ok();
+    Ok(())
+}
+
+
+/// Remove the global workspace selector without forcing every subcommand to
+/// reimplement option parsing. The selector may appear before or after a command.
+fn extract_workspace_option(args: &mut Vec<String>) -> Result<Option<String>> {
+    let mut selected = None;
+    let mut kept = Vec::with_capacity(args.len());
+    let mut index = 0;
+    while index < args.len() {
+        let current = &args[index];
+        if current == "--workspace" || current == "-w" {
+            let value = args.get(index + 1).ok_or_else(|| {
+                nero_core::NeroError::Message(format!("{current} requires a path or registered workspace name"))
+            })?;
+            if selected.is_some() {
+                return Err(nero_core::NeroError::Message("specify --workspace only once".into()));
+            }
+            selected = Some(value.clone());
+            index += 2;
+        } else if let Some(value) = current.strip_prefix("--workspace=") {
+            if value.trim().is_empty() {
+                return Err(nero_core::NeroError::Message("--workspace requires a path or registered workspace name".into()));
+            }
+            if selected.replace(value.to_owned()).is_some() {
+                return Err(nero_core::NeroError::Message("specify --workspace only once".into()));
+            }
+            index += 1;
+        } else {
+            kept.push(current.clone());
+            index += 1;
+        }
+    }
+    *args = kept;
+    Ok(selected)
+}
+
+/// Workspace selection precedence: explicit CLI selector, environment override,
+/// a workspace discovered from the current directory/its ancestors, then the saved default.
+/// This lets a local workspace take precedence while the saved default handles arbitrary folders.
+fn selected_workspace(explicit: Option<&str>) -> Result<Workspace> {
+    if let Some(target) = explicit {
+        return open_selected_workspace(target);
+    }
+    if let Some(target) = env::var_os("NERO_WORKSPACE") {
+        let target = target.to_string_lossy();
+        return open_selected_workspace(&target);
+    }
+
+    let cwd = env::current_dir()?;
+    for candidate in cwd.ancestors() {
+        if candidate.join(".nero").is_dir() || candidate.join(".note").is_dir() {
+            return open_workspace(candidate.to_path_buf());
+        }
+    }
+    if let Some(path) = config::default_workspace()? {
+        return open_workspace(path);
+    }
+    Workspace::discover(cwd)
+}
+
+fn open_selected_workspace(target: &str) -> Result<Workspace> {
+    open_workspace(config::resolve_target(target)?)
+}
+
+fn open_workspace(path: PathBuf) -> Result<Workspace> {
+    let workspace = Workspace::open(path)?;
+    if !workspace.metadata_dir().is_dir() && !workspace.root().join(".note").is_dir() {
+        return Err(nero_core::NeroError::Message(format!(
+            "{} is not an initialized Nero workspace; run `nero init {}` first",
+            workspace.root().display(), workspace.root().display()
+        )));
+    }
+    Ok(workspace)
+}
+
+fn handle_workspace_command(
+    mut args: impl Iterator<Item = String>,
+    override_workspace: Option<&str>,
+) -> Result<()> {
+    let subcommand = args.next().unwrap_or_else(|| "show".to_owned());
+    match subcommand.as_str() {
+        "set" | "default" => {
+            let path = args.next().ok_or_else(|| {
+                nero_core::NeroError::Message("usage: nero workspace set <initialized-workspace-path>".into())
+            })?;
+            let path = config::set_default_path(PathBuf::from(path))?;
+            println!("default workspace: {}", path.display());
+            println!("commands now work from any directory; use `-w` to override for one command");
+        }
+        "add" => {
+            let name = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace add <name> <path>".into()))?;
+            let path = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace add <name> <path>".into()))?;
+            let path = config::add_workspace(&name, PathBuf::from(path))?;
+            println!("registered workspace `{name}` -> {}", path.display());
+        }
+        "use" | "switch" => {
+            let name = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace use <name>".into()))?;
+            let path = config::use_workspace(&name)?;
+            println!("default workspace: {name} -> {}", path.display());
+        }
+        "list" | "ls" => {
+            let view = config::view()?;
+            if view.workspaces.is_empty() && view.default_workspace_path.is_none() {
+                println!("No workspaces configured yet. Use `nero workspace set ~/notes` or `nero workspace add <name> <path>`.");
+                return Ok(());
+            }
+            let default_named = view.default_workspace_name.as_deref();
+            for (name, path) in &view.workspaces {
+                println!("{} {:16} {}", if default_named == Some(name.as_str()) { "*" } else { " " }, name, path.display());
+            }
+            if let Some(path) = view.default_workspace_path {
+                println!("* {:16} {}", "default", path.display());
+            }
+        }
+        "show" | "current" => {
+            let workspace = selected_workspace(override_workspace)?;
+            println!("workspace: {}", workspace.root().display());
+            println!("config:    {}", config::config_path()?.display());
+        }
+        "remove" | "rm" => {
+            let name = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace remove <name>".into()))?;
+            let path = config::remove_workspace(&name)?;
+            println!("removed workspace `{name}` ({})", path.display());
+        }
+        "clear" | "unset" => {
+            config::clear_default()?;
+            println!("default workspace cleared; Nero will use NERO_WORKSPACE or discover from the current directory");
+        }
+        "help" | "--help" | "-h" => {
+            println!("workspace commands:\n  set <path>       set the default workspace path\n  add <name> <path> register a named workspace\n  use <name>       make a named workspace the default\n  list             list registered workspaces\n  show             print the workspace selected for this command\n  remove <name>    remove a named workspace\n  clear            clear the saved default")
+        }
+        other => return Err(nero_core::NeroError::Message(format!("unknown workspace command `{other}`; run `nero workspace help`"))),
+    }
     Ok(())
 }
 
@@ -407,7 +551,19 @@ fn print_help() {
     println!(r#"Nero — a small place for your thoughts.
 
 USAGE
-  nero <command> [arguments]
+  nero [--workspace PATH|NAME] <command> [arguments]
+  nero -w PATH|NAME <command> [arguments]
+
+WORKSPACES
+  workspace set <path>    Set the default workspace for all directories
+  workspace add <name> <path>
+                          Register a named workspace
+  workspace use <name>    Make a named workspace the default
+  workspace list          List registered workspaces
+  workspace show          Show the workspace currently selected
+  workspace remove <name> Remove a registered workspace
+  workspace clear         Clear the saved default workspace
+  --workspace / -w        Override the workspace for one command
 
 COMMANDS
   init [path]             Create a workspace
@@ -418,7 +574,7 @@ COMMANDS
   find <query>            Search notes
   backlinks <note>        Find notes linking to a note
   today                   Create/open today's daily note
-  render <note>            Render a note to HTML
+  render <note>           Render a note to HTML
   reindex                 Rebuild/update the search index
   watch                   Watch Markdown files and refresh the index
   doctor                  Check workspace health
@@ -453,6 +609,10 @@ COMMANDS
   help                    Show this help
   version                 Show the version
 
+WORKSPACE SELECTION
+  --workspace PATH|NAME (or -w) overrides the selected workspace for one command.
+  Otherwise Nero uses NERO_WORKSPACE, a saved default, then directory discovery.
+
 NOTES
   Notes are ordinary Markdown files.
   Internal links use [[Note Name]].
@@ -478,4 +638,29 @@ where I: IntoIterator<Item = String> {
     let joined = args.into_iter().collect::<Vec<_>>().join(" ");
     if joined.trim().is_empty() { Err(nero_core::NeroError::Message("an argument is required".into())) }
     else { Ok(joined) }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_workspace_option_before_or_after_command() {
+        let mut args = vec!["-w", "research", "find", "eigenvalues"]
+            .into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(extract_workspace_option(&mut args).unwrap().as_deref(), Some("research"));
+        assert_eq!(args, vec!["find".to_owned(), "eigenvalues".to_owned()]);
+
+        let mut args = vec!["find", "eigenvalues", "--workspace=/home/user/notes"]
+            .into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(extract_workspace_option(&mut args).unwrap().as_deref(), Some("/home/user/notes"));
+        assert_eq!(args, vec!["find".to_owned(), "eigenvalues".to_owned()]);
+    }
+
+    #[test]
+    fn rejects_duplicate_workspace_selectors() {
+        let mut args = vec!["-w", "personal", "--workspace", "research"]
+            .into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert!(extract_workspace_option(&mut args).is_err());
+    }
 }

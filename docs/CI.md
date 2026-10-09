@@ -6,7 +6,7 @@ It runs on pushes to `main`, pull requests, and manual dispatches. The workflow 
 
 - **Rust matrix:** Ubuntu, macOS, and Windows; `fmt`, `check`, `clippy`, tests, and release builds.
 - **GUI:** Node 24, TypeScript typecheck, Vite build, and Tauri backend check.
-- **Smoke test:** builds the CLI in debug mode and runs `tests/smoke.sh`, including local backup, encrypted recovery, Git, and provider-neutral storage behavior.
+- **Smoke test:** builds the CLI in debug mode and runs `tests/smoke.sh`, including workspace selection from outside a workspace, named workspace overrides, local backup, encrypted recovery, Git, and provider-neutral storage behavior.
 
 The workspace declares Rust 1.90 as its minimum supported version, so CI pins that toolchain rather than silently testing only the newest stable compiler.
 

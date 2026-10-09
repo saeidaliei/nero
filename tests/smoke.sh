@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+ALT_WORKSPACE="${TMP}-research"
+USER_CONFIG="${TMP}-user-config"
+trap 'rm -rf "$TMP" "$ALT_WORKSPACE" "$USER_CONFIG"' EXIT
 
 # This script is a shell-level smoke test for the expected CLI UX.
 # It requires a compiled `nero` binary at $NERO_BIN and a working `git` executable.
@@ -26,6 +28,22 @@ printf '---\ntitle: Signal Processing\n---\n' > math/Signal.md
 "$NERO_BIN" render "math/notes/fourier-transform.md"
 "$NERO_BIN" reindex
 "$NERO_BIN" doctor
+
+# Global workspace preferences make ordinary commands work without changing directory.
+export NERO_CONFIG_HOME="$USER_CONFIG"
+"$NERO_BIN" workspace set "$TMP"
+cd /tmp
+"$NERO_BIN" new "Created from outside workspace"
+"$NERO_BIN" list | grep -F "Created from outside workspace"
+"$NERO_BIN" init "$ALT_WORKSPACE"
+"$NERO_BIN" workspace add research "$ALT_WORKSPACE"
+"$NERO_BIN" --workspace research new "Research-only note"
+test -f "$ALT_WORKSPACE/research-only-note.md"
+"$NERO_BIN" workspace use research
+"$NERO_BIN" new "Default alias note"
+test -f "$ALT_WORKSPACE/default-alias-note.md"
+"$NERO_BIN" workspace set "$TMP"
+cd "$TMP"
 BACKUP="$TMP/../nero-smoke-backup.zip"
 "$NERO_BIN" backup create "$BACKUP"
 "$NERO_BIN" backup verify "$BACKUP"

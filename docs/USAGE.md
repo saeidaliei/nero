@@ -2,58 +2,103 @@
 
 ## Install or build from source
 
-Nero uses the pinned Rust toolchain in `rust-toolchain.toml` (Rust 1.90) and the GUI uses Node 24.
+Nero uses the Rust toolchain pinned in `rust-toolchain.toml` (Rust 1.90). Clone the repository and enter its root:
 
-From the repository root:
+```bash
+git clone https://github.com/saeidaliei/nero.git
+cd nero
+```
+
+Run the tests and build the CLI/TUI binary:
 
 ```bash
 cargo test --workspace
-cargo run -p nero -- --help
+cargo build --release -p nero
 ```
 
-For a release build:
+Install the binary into Cargo's user bin directory (`~/.cargo/bin`):
 
 ```bash
-cargo build --workspace --release
+cargo install --path crates/nero --force
 ```
 
-## Create a workspace
+Make sure `~/.cargo/bin` is on your `PATH`. The desktop GUI is built separately; see [GUI](GUI.md).
+
+## Create and select a workspace
+
+Initialize a workspace and set it as the default once:
 
 ```bash
 nero init ~/notes
-cd ~/notes
+nero workspace set ~/notes
 ```
 
-A workspace is just a directory containing Markdown files. Nero keeps disposable metadata under `.nero/`.
+Now run Nero from any directory without `cd ~/notes` first:
 
-## Everyday commands
+```bash
+nero new "An idea"
+```
+
+The everyday commands are, for example:
+
+```bash
+nero list
+nero find "something"
+nero edit "An idea"
+nero today
+nero tui
+```
+
+
+For several workspaces, initialize each one, register names, and choose a default:
+
+```bash
+nero workspace add personal ~/notes
+nero init ~/work/research-notes
+nero workspace add research ~/work/research-notes
+nero workspace use research
+nero workspace list
+nero -w personal tui
+nero --workspace ~/notes find "equation"
+```
+
+See [Workspace configuration](WORKSPACES.md) for selection precedence, environment overrides, and config paths.
+
+## Everyday CLI commands
 
 ```text
-nero init [path]             Create a workspace
-nero new <title>             Create a Markdown note
-nero list                    List notes
-nero open <note>             Print a note
-nero edit <note>             Open a note in $EDITOR
-nero find <query>            Search notes
-nero backlinks <note>        Find notes linking to a note
-nero today                   Create/open today's daily note
-nero render <note>           Render a note to HTML
-nero reindex                 Refresh the search index
-nero watch                   Watch Markdown files and refresh the index
-nero doctor                  Check workspace health
+nero init [path]                 Create a workspace
+nero workspace set <path>        Set the default workspace
+nero workspace add <name> <path> Register a named workspace
+nero workspace use <name>        Select a named default
+nero workspace list              List configured workspaces
+nero new <title>                 Create a Markdown note
+nero list                        List notes
+nero open <note>                 Print a note
+nero edit <note>                 Open a note in $EDITOR or $VISUAL
+nero find <query>                Search notes
+nero backlinks <note>            Find notes linking to a note
+nero today                       Create/locate today's daily note
+nero render <note>               Render a note to HTML
+nero reindex                     Refresh the search index
+nero watch                       Watch Markdown files and refresh the index
+nero doctor                      Check workspace health
 ```
+
+Run `nero --help` for the full command set, including Git and backup commands.
 
 ## TUI
 
 ```bash
-cargo run -p nero -- tui
+nero tui
 ```
 
-Important keys:
+The TUI is keyboard-first:
 
 - `j` / `k` — move through notes
+- `e` — edit the selected note in `$EDITOR`, then return to Nero
 - `/` — search
-- `:` — command palette
+- `:` — command palette (`:edit` also edits the selected note)
 - `b` — backlinks
 - `c` — context
 - `r` — recent notes
@@ -61,22 +106,29 @@ Important keys:
 - `Ctrl-D` / `Ctrl-U` — page down/up
 - `q` — quit
 
-The TUI watches the workspace and refreshes when Markdown files change.
+Set `$EDITOR` or `$VISUAL` first. In Fish, for example:
+
+```fish
+set -Ux EDITOR nvim
+```
+
+Nero restores normal terminal mode while the editor runs, then reloads the note and index on return.
 
 ## GUI
 
-The desktop UI lives in `gui/`. From that directory:
+The GUI lives in `gui/`. Install its dependencies, then run it against the chosen workspace:
 
 ```bash
-pnpm install
-NERO_WORKSPACE=~/notes pnpm tauri dev
+cd gui
+npm install
+NERO_WORKSPACE="$HOME/notes" npm run tauri:dev
 ```
 
-The GUI and TUI use the same `nero-core` document model. Editing always writes Markdown back to disk.
+For normal usage, `nero gui` launches the installed GUI and passes it the selected workspace. See [GUI](GUI.md) for platform packages and build steps.
 
-## Search
+## Search and index
 
-Search is backed by SQLite FTS5. The SQLite file is disposable:
+Search uses SQLite FTS5. The database at `.nero/index.sqlite` is disposable and can be rebuilt from Markdown:
 
 ```bash
 nero reindex
@@ -84,35 +136,20 @@ rm .nero/index.sqlite
 nero reindex
 ```
 
-The second command reconstructs the index entirely from the workspace files.
+Do not delete the Markdown files; only the index is a cache.
 
-## Editing
+## Git, backups, and remote storage
 
-`nero edit` uses `$EDITOR`, falling back to `$VISUAL`. For example:
-
-```bash
-EDITOR=nvim nero edit "Fourier Transform"
-```
-
-The GUI provides an embedded Markdown editor, but the source on disk remains authoritative.
-
-## Git versioning
-
-Git is optional but useful for history and collaboration through ordinary Git hosting:
+Use Git for version history:
 
 ```bash
 nero git init
-nero git status
 nero git snapshot "Notes checkpoint"
 nero git remote add origin git@github.com:you/notes.git
 nero git push
 ```
 
-Use Git for **version history**, not as a replacement for encrypted disaster-recovery backups.
-
-## Backups
-
-Create a local snapshot:
+Create a portable backup and verify it before relying on it:
 
 ```bash
 nero backup create backup.zip
@@ -120,34 +157,12 @@ nero backup verify backup.zip
 nero backup restore backup.zip ~/recovered-notes
 ```
 
-Encrypted backup:
+Encrypted backups require a private identity that must be protected separately:
 
 ```bash
 nero key generate
 nero backup create --encrypt backup.age
-nero backup verify backup.age
 nero backup recovery-test backup.age
 ```
 
-Keep another protected copy of the private identity. An encrypted backup is unrecoverable without it.
-
-## Remote storage
-
-Remote storage is provider-neutral and uses the user's existing `rclone` configuration:
-
-```bash
-nero storage add mega mega:nero-backups --encrypt
-nero storage test mega
-nero backup push mega
-nero backup list mega
-```
-
-See [Storage](STORAGE.md) for the security model and remote naming rules.
-
-## Health checks
-
-```bash
-nero doctor
-```
-
-`doctor` checks the `.nero` metadata area, note discovery, index refresh, broken wiki links, and configured storage profiles.
+Remote backup targets use the user's existing `rclone` configuration. See [Backups](BACKUP.md), [Recovery](RECOVERY.md), [Security](SECURITY.md), and [Storage](STORAGE.md).

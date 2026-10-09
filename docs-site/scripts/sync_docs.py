@@ -16,7 +16,9 @@ DEST = ROOT / "content" / "docs"
 DOCS = [
     ("README.md", "Documentation", ""),
     ("USAGE.md", "Usage", "usage"),
+    ("WORKSPACES.md", "Workspaces", "workspaces"),
     ("MARKDOWN.md", "Markdown", "markdown"),
+    ("REMINDERS.md", "Reminders", "reminders"),
     ("GUI.md", "Desktop GUI", "gui"),
     ("BACKUP.md", "Backups", "backup"),
     ("RECOVERY.md", "Recovery", "recovery"),
@@ -30,10 +32,14 @@ DOCS = [
 ]
 
 SLUGS = {filename.lower(): slug for filename, _, slug in DOCS}
-BASE = "/docs/"
 
 
-def rewrite_links(text: str) -> str:
+def rewrite_links(text: str, source_slug: str) -> str:
+    """Rewrite links among canonical Markdown docs without assuming a domain root.
+
+    Relative URLs preserve the `/nero/` project-Pages base path; absolute `/docs/...`
+    links would incorrectly jump to the root of `saeidaliei.github.io`.
+    """
     def replace(match: re.Match[str]) -> str:
         label, target = match.group(1), match.group(2)
         if target.startswith(("http://", "https://", "mailto:", "#", "/")):
@@ -42,7 +48,10 @@ def rewrite_links(text: str) -> str:
         slug = SLUGS.get(path.lower())
         if slug is None:
             return match.group(0)
-        href = BASE if not slug else f"{BASE}{slug}/"
+        if source_slug:
+            href = "../" if not slug else f"../{slug}/"
+        else:
+            href = "./" if not slug else f"{slug}/"
         if sep:
             href += f"#{fragment}"
         return f"[{label}]({href})"
@@ -80,7 +89,7 @@ def main() -> None:
         source = SOURCE / filename
         raw = source.read_text(encoding="utf-8")
         title = title_from(raw, label)
-        body = rewrite_links(strip_first_h1(raw))
+        body = rewrite_links(strip_first_h1(raw), slug)
         out_dir = DEST if not slug else DEST / slug
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / "_index.md" if not slug else out_dir / "index.md"

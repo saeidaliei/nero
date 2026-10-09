@@ -4,7 +4,7 @@
 
 The repository pins Rust 1.90 in `rust-toolchain.toml` and Node 24 in `gui/.nvmrc`.
 
-The workspace uses Rust 2024 edition.
+The workspace uses Rust 2024 edition. The GUI has a separate Tauri Cargo project under `gui/src-tauri/` and is excluded from the root Cargo workspace intentionally.
 
 ## Build and test
 
@@ -20,9 +20,10 @@ For the GUI:
 
 ```bash
 cd gui
-npm ci
+npm install --include=dev
 npx tsc --noEmit
 npm run build
+npm run tauri:dev
 ```
 
 ## Source layout
@@ -61,6 +62,8 @@ Comments should explain **why** a piece of code exists when the reason is not ob
 Do not add comments that merely restate `for`, `if`, or straightforward assignments.
 
 ## Tests
+
+The CLI includes tests for parsing the global `--workspace` / `-w` option. `tests/smoke.sh` also verifies that a configured default and named workspace can be used without changing into the workspace directory.
 
 Security-sensitive behavior should have regression tests next to the implementation: path traversal, symlinks, unsafe Git arguments, backup verification, and encrypted recovery.
 
