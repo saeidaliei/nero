@@ -182,13 +182,13 @@ fn run() -> Result<()> {
                     let downloaded = workspace.storage_download_file(storage_name, backup_name, &temporary)?;
                     let encrypted = Workspace::backup_is_encrypted(&downloaded)?;
                     let result = if encrypted {
-                        workspace.restore_encrypted_backup(
+                        Workspace::restore_encrypted_backup(
                             &downloaded,
                             destination,
                             identity.unwrap_or(Workspace::identity_path()?),
                         )
                     } else {
-                        workspace.restore_backup(&downloaded, destination)
+                        Workspace::restore_backup(&downloaded, destination)
                     };
                     let _ = std::fs::remove_file(&downloaded);
                     let stats = result?;

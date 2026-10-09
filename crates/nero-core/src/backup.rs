@@ -181,7 +181,9 @@ pub(crate) fn write_backup_archive<W: Write>(workspace: &Workspace, output: W) -
     let manifest_json = serde_json::to_vec_pretty(&manifest)
         .map_err(|error| NeroError::Message(format!("could not serialize backup manifest: {error}")))?;
 
-    let mut zip = ZipWriter::new(output);
+    // Encrypted backups wrap an age stream, which implements `Write` but not `Seek`.
+    // ZIP's stream mode writes data descriptors instead of seeking back to patch headers.
+    let mut zip = ZipWriter::new_stream(output);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     zip.start_file(MANIFEST_NAME, options)
@@ -198,7 +200,8 @@ pub(crate) fn write_backup_archive<W: Write>(workspace: &Workspace, output: W) -
 
     let output = zip
         .finish()
-        .map_err(|error| NeroError::Message(format!("could not finalize backup archive: {error}")))?;
+        .map_err(|error| NeroError::Message(format!("could not finalize backup archive: {error}")))?
+        .into_inner();
 
     Ok((output, manifest))
 }

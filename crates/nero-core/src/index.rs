@@ -91,7 +91,7 @@ impl Index {
             for target in &document.wiki_links {
                 transaction.execute(
                     "INSERT OR IGNORE INTO links(source_path, target) VALUES (?1, ?2)",
-                    params![normalize_path(&note.path), target],
+                    params![normalize_path(&note.path), &target.target],
                 )?;
             }
             transaction.execute(

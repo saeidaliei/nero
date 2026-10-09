@@ -221,7 +221,8 @@ mod tests {
 
     #[test]
     fn renders_common_markdown_shapes() {
-        let rendered = render("---\ntitle: Test\n---\n\n# Hello\n\n- [ ] Task\n\nSee [[World]].\n\n$$\\frac{x^2}{y}$$");
+        let document = Document::parse("---\ntitle: Test\n---\n\n# Hello\n\n- [ ] Task\n\nSee [[World]].\n\n$$\\frac{x^2}{y}$$");
+        let rendered = render(&document);
         let plain = rendered.lines.iter().map(|line| {
             line.spans.iter().map(|span| span.content.as_ref()).collect::<String>()
         }).collect::<Vec<_>>().join("\n");

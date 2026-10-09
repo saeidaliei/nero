@@ -328,7 +328,10 @@ impl Workspace {
 
         let mut broken_links = 0usize;
         for note in notes {
-            let note_data = self.read_note(&note.path)?;
+            // `read_note` accepts a user-facing string query, while summaries store paths.
+            // Convert explicitly so nested paths are resolved through the same safe lookup path.
+            let note_query = note.path.to_string_lossy().into_owned();
+            let note_data = self.read_note(&note_query)?;
             for link in &note_data.document.wiki_links {
                 if self.resolve_link(&note.path, &link.target)?.is_none() { broken_links += 1; }
             }
@@ -835,11 +838,13 @@ mod tests {
     }
 
     #[test]
-    fn doctor_rebuilds_index() {
+    fn doctor_rebuilds_index_for_nested_note_paths() {
         let root = temp_workspace("doctor");
         let workspace = Workspace::init(&root).unwrap();
-        workspace.create_note("Alpha").unwrap();
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::write(root.join("nested/alpha.md"), "# Alpha\n\nSee [[Missing Note]].\n").unwrap();
         let report = workspace.doctor().unwrap();
         assert!(report.iter().any(|line| line.contains("index refreshed")));
+        assert!(report.iter().any(|line| line.contains("1 broken wiki link")));
     }
 }

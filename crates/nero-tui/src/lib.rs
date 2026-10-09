@@ -5,7 +5,7 @@ use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, t
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use nero_core::{NoteSummary, Result, Workspace, WorkspaceWatcher};
 use ratatui::{
-    layout::{Constraint, Layout, Position, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
@@ -90,7 +90,8 @@ impl App {
             selected_path: None,
             title: String::from("Nero"),
             path: PathBuf::new(),
-            rendered: Text::raw("No notes yet.") ,
+            document: None,
+            rendered: Text::raw("No notes yet."),
             status: String::from("Ready"),
             input_mode: InputMode::Normal,
             input: String::new(),
@@ -324,7 +325,8 @@ impl App {
         } else {
             self.title = "No matches".into();
             self.path.clear();
-            self.body.clear();
+            self.document = None;
+            self.selected_path = None;
             self.rendered = Text::raw("No notes match the query.");
             self.scroll = 0;
         }

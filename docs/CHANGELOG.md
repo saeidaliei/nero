@@ -2,6 +2,17 @@
 
 ## 1.0.0
 
+Build/test fixes applied after the first user Cargo run:
+
+- Fixed TUI `App` initialization to initialize its parsed `document` state.
+- Clear the current document and selected path when a search returns no matches; removed a stale reference to the deleted `body` field.
+- Removed an unused Ratatui `Position` import.
+- Stream ZIP archives so encrypted backup output only needs `Write`, not `Seek`.
+- Index the string target of each structured `WikiLink` rather than binding the struct itself to SQLite.
+- Convert a note's relative path to the string query expected by `read_note` during `nero doctor`, with a regression test for nested notes.
+- Updated the TUI Markdown renderer test to parse its source into a `Document` before rendering.
+- Corrected remote backup pull to call the static `Workspace::restore_*` functions using associated-function syntax.
+
 - Documentation is consolidated under `docs/`, with dedicated usage, Markdown-format, development, GUI, security, recovery, backup, storage, CI, roadmap, and changelog guides.
 - Source files include focused comments around filesystem boundaries, atomic writes, encryption, backup safety, indexing, Git argument validation, and Tauri/core boundaries.
 
