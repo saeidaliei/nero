@@ -5,15 +5,15 @@ use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, t
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use nero_core::{NoteSummary, Result, Workspace, WorkspaceWatcher};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    DefaultTerminal, Frame,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,17 +46,61 @@ struct CommandSpec {
 }
 
 const COMMANDS: &[CommandSpec] = &[
-    CommandSpec { name: "new", description: "create a Markdown note", usage: "new <title>" },
-    CommandSpec { name: "open", description: "open a note", usage: "open <note>" },
-    CommandSpec { name: "edit", description: "edit the selected note in $EDITOR", usage: "edit" },
-    CommandSpec { name: "search", description: "search the workspace", usage: "search <query>" },
-    CommandSpec { name: "today", description: "open today's daily note", usage: "today" },
-    CommandSpec { name: "reindex", description: "refresh the search index", usage: "reindex" },
-    CommandSpec { name: "backlinks", description: "show links into the current note", usage: "backlinks" },
-    CommandSpec { name: "recent", description: "show recently opened notes", usage: "recent" },
-    CommandSpec { name: "context", description: "show links, tasks and metadata", usage: "context" },
-    CommandSpec { name: "close", description: "close the side panel", usage: "close" },
-    CommandSpec { name: "quit", description: "quit Nero", usage: "quit" },
+    CommandSpec {
+        name: "new",
+        description: "create a Markdown note",
+        usage: "new <title>",
+    },
+    CommandSpec {
+        name: "open",
+        description: "open a note",
+        usage: "open <note>",
+    },
+    CommandSpec {
+        name: "edit",
+        description: "edit the selected note in $EDITOR",
+        usage: "edit",
+    },
+    CommandSpec {
+        name: "search",
+        description: "search the workspace",
+        usage: "search <query>",
+    },
+    CommandSpec {
+        name: "today",
+        description: "open today's daily note",
+        usage: "today",
+    },
+    CommandSpec {
+        name: "reindex",
+        description: "refresh the search index",
+        usage: "reindex",
+    },
+    CommandSpec {
+        name: "backlinks",
+        description: "show links into the current note",
+        usage: "backlinks",
+    },
+    CommandSpec {
+        name: "recent",
+        description: "show recently opened notes",
+        usage: "recent",
+    },
+    CommandSpec {
+        name: "context",
+        description: "show links, tasks and metadata",
+        usage: "context",
+    },
+    CommandSpec {
+        name: "close",
+        description: "close the side panel",
+        usage: "close",
+    },
+    CommandSpec {
+        name: "quit",
+        description: "quit Nero",
+        usage: "quit",
+    },
 ];
 
 struct App {
@@ -281,12 +325,12 @@ impl App {
         let Some(item) = self.side_items.get(self.side_selected).cloned() else {
             return Ok(());
         };
-        if let Some(path) = item.path {
-            if let Some(index) = self.notes.iter().position(|note| note.path == path) {
-                self.side_mode = SideMode::None;
-                self.select_index(index)?;
-                self.status = format!("Opened {}", item.label);
-            }
+        if let Some(path) = item.path
+            && let Some(index) = self.notes.iter().position(|note| note.path == path)
+        {
+            self.side_mode = SideMode::None;
+            self.select_index(index)?;
+            self.status = format!("Opened {}", item.label);
         }
         Ok(())
     }
@@ -324,7 +368,9 @@ impl App {
             SideMode::Context => {
                 if let Ok(note) = self.workspace.read_note(&self.path.to_string_lossy()) {
                     for link in &note.document.wiki_links {
-                        let resolved = self.workspace.resolve_link(&note.summary.path, &link.target)?;
+                        let resolved = self
+                            .workspace
+                            .resolve_link(&note.summary.path, &link.target)?;
                         let label = link.display_label().to_owned();
                         self.side_items.push(SideItem {
                             label: format!("→ {label}"),
@@ -359,7 +405,11 @@ impl App {
     }
 
     fn set_side_mode(&mut self, mode: SideMode) -> Result<()> {
-        self.side_mode = if self.side_mode == mode { SideMode::None } else { mode };
+        self.side_mode = if self.side_mode == mode {
+            SideMode::None
+        } else {
+            mode
+        };
         self.refresh_side_panel()
     }
 
@@ -372,7 +422,12 @@ impl App {
             self.input.clear();
             return Ok(());
         }
-        self.notes = self.workspace.search(&query)?.into_iter().map(|result| result.note).collect();
+        self.notes = self
+            .workspace
+            .search(&query)?
+            .into_iter()
+            .map(|result| result.note)
+            .collect();
         self.selected = 0;
         self.selected_path = None;
         self.open_selected_after_search()?;
@@ -442,12 +497,19 @@ impl App {
             "open" => {
                 if argument.is_empty() {
                     self.status = "Usage: :open <note>".into();
-                } else if let Some(index) = self.notes.iter().position(|item| item.path.to_string_lossy().eq_ignore_ascii_case(argument) || item.title.eq_ignore_ascii_case(argument)) {
+                } else if let Some(index) = self.notes.iter().position(|item| {
+                    item.path.to_string_lossy().eq_ignore_ascii_case(argument)
+                        || item.title.eq_ignore_ascii_case(argument)
+                }) {
                     self.select_index(index)?;
                     self.input.clear();
                     self.input_mode = InputMode::Normal;
-                } else if let Some(note) = self.workspace.read_note(argument).ok() {
-                    if let Some(index) = self.notes.iter().position(|item| item.path == note.summary.path) {
+                } else if let Ok(note) = self.workspace.read_note(argument) {
+                    if let Some(index) = self
+                        .notes
+                        .iter()
+                        .position(|item| item.path == note.summary.path)
+                    {
                         self.select_index(index)?;
                     } else {
                         self.open_path(note.summary.path)?;
@@ -478,7 +540,10 @@ impl App {
             }
             "reindex" => {
                 let stats = self.workspace.reindex()?;
-                self.status = format!("Index: {} updated, {} removed", stats.indexed, stats.removed);
+                self.status = format!(
+                    "Index: {} updated, {} removed",
+                    stats.indexed, stats.removed
+                );
                 self.input.clear();
                 self.input_mode = InputMode::Normal;
             }
@@ -512,10 +577,8 @@ impl App {
         loop {
             terminal.draw(|frame| draw(frame, self))?;
             self.poll_watcher().map_err(to_io)?;
-            if event::poll(Duration::from_millis(75))? {
-                if handle_event(self, terminal)? {
-                    break Ok(());
-                }
+            if event::poll(Duration::from_millis(75))? && handle_event(self, terminal)? {
+                break Ok(());
             }
         }
     }
@@ -553,11 +616,23 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         SideMode::Recent => "  · recent",
         SideMode::Context => "  · context",
     };
-    let dirty = if app.dirty_notice { "  •  changed on disk" } else { "" };
+    let dirty = if app.dirty_notice {
+        "  •  changed on disk"
+    } else {
+        ""
+    };
     let line = Line::from(vec![
-        Span::styled("NERO", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "NERO",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
-        Span::styled(app.title.as_str(), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            app.title.as_str(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
         Span::styled(mode, Style::default().fg(Color::DarkGray)),
         Span::styled(dirty, Style::default().fg(Color::Yellow)),
     ]);
@@ -567,7 +642,11 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_main(frame: &mut Frame, app: &App, area: Rect) {
     let constraints = match app.side_mode {
         SideMode::None => vec![Constraint::Length(30), Constraint::Min(0)],
-        _ => vec![Constraint::Length(28), Constraint::Min(0), Constraint::Length(30)],
+        _ => vec![
+            Constraint::Length(28),
+            Constraint::Min(0),
+            Constraint::Length(30),
+        ],
     };
     let parts = Layout::horizontal(constraints).split(area);
 
@@ -582,11 +661,16 @@ fn draw_note_list(frame: &mut Frame, app: &App, area: Rect) {
     let items = app.notes.iter().enumerate().map(|(index, note)| {
         let marker = if index == app.selected { "›" } else { " " };
         let style = if index == app.selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
-        ListItem::new(Line::from(vec![Span::styled(format!("{marker} "), style), Span::styled(note.title.clone(), style)]))
+        ListItem::new(Line::from(vec![
+            Span::styled(format!("{marker} "), style),
+            Span::styled(note.title.clone(), style),
+        ]))
     });
     let mut state = ListState::default();
     if !app.notes.is_empty() {
@@ -623,13 +707,18 @@ fn draw_side(frame: &mut Frame, app: &App, area: Rect) {
     };
     let items = app.side_items.iter().enumerate().map(|(index, item)| {
         let style = if index == app.side_selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
         ListItem::new(Text::from(vec![
             Line::from(Span::styled(item.label.clone(), style)),
-            Line::from(Span::styled(format!("  {}", item.detail), Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled(
+                format!("  {}", item.detail),
+                Style::default().fg(Color::DarkGray),
+            )),
         ]))
     });
     let mut state = ListState::default();
@@ -654,7 +743,10 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         InputMode::Search => format!("/{}  ·  Enter search  Esc cancel", app.input),
         InputMode::Command => format!(":{}  ·  Enter run  ↑↓ choose  Esc cancel", app.input),
     };
-    frame.render_widget(Paragraph::new(text).style(Style::default().fg(Color::DarkGray)), area);
+    frame.render_widget(
+        Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
+        area,
+    );
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
@@ -688,24 +780,53 @@ fn draw_command_overlay(frame: &mut Frame, app: &App) {
     frame.render_widget(Clear, area);
     let commands = app.filtered_commands();
     let height = area.height.saturating_sub(3) as usize;
-    let start = app.command_selected.saturating_sub(height / 2).min(commands.len().saturating_sub(height));
-    let visible = commands.iter().skip(start).take(height).enumerate().map(|(offset, (_, command))| {
-        let absolute = start + offset;
-        let selected = absolute == app.command_selected.min(commands.len().saturating_sub(1));
-        let style = if selected { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() };
-        ListItem::new(Text::from(vec![
-            Line::from(vec![Span::styled(command.name, style), Span::raw("  "), Span::styled(command.description, Style::default().fg(Color::DarkGray))]),
-            Line::from(Span::styled(format!("   {}", command.usage), Style::default().fg(Color::DarkGray))),
-        ]))
-    });
+    let start = app
+        .command_selected
+        .saturating_sub(height / 2)
+        .min(commands.len().saturating_sub(height));
+    let visible =
+        commands
+            .iter()
+            .skip(start)
+            .take(height)
+            .enumerate()
+            .map(|(offset, (_, command))| {
+                let absolute = start + offset;
+                let selected =
+                    absolute == app.command_selected.min(commands.len().saturating_sub(1));
+                let style = if selected {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(Text::from(vec![
+                    Line::from(vec![
+                        Span::styled(command.name, style),
+                        Span::raw("  "),
+                        Span::styled(command.description, Style::default().fg(Color::DarkGray)),
+                    ]),
+                    Line::from(Span::styled(
+                        format!("   {}", command.usage),
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                ]))
+            });
     frame.render_widget(
-        List::new(visible).block(Block::default().borders(Borders::ALL).title(format!("Command  :{}", app.input))),
+        List::new(visible).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Command  :{}", app.input)),
+        ),
         area,
     );
 }
 
 fn handle_event(app: &mut App, terminal: &mut DefaultTerminal) -> io::Result<bool> {
-    let Event::Key(key) = event::read()? else { return Ok(false); };
+    let Event::Key(key) = event::read()? else {
+        return Ok(false);
+    };
     if key.kind != KeyEventKind::Press {
         return Ok(false);
     }
@@ -720,10 +841,18 @@ fn handle_event(app: &mut App, terminal: &mut DefaultTerminal) -> io::Result<boo
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Char('e') => app.edit_selected(terminal)?,
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.side_mode == SideMode::None { app.move_selection(1).map_err(to_io)?; } else { app.move_side_selection(1); }
+            if app.side_mode == SideMode::None {
+                app.move_selection(1).map_err(to_io)?;
+            } else {
+                app.move_side_selection(1);
+            }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.side_mode == SideMode::None { app.move_selection(-1).map_err(to_io)?; } else { app.move_side_selection(-1); }
+            if app.side_mode == SideMode::None {
+                app.move_selection(-1).map_err(to_io)?;
+            } else {
+                app.move_side_selection(-1);
+            }
         }
         KeyCode::PageDown | KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.scroll = app.scroll.saturating_add(10);
@@ -780,14 +909,20 @@ fn handle_search_input(app: &mut App, key: crossterm::event::KeyEvent) -> io::Re
             app.input.clear();
         }
         KeyCode::Enter => app.search().map_err(to_io)?,
-        KeyCode::Backspace => { app.input.pop(); }
+        KeyCode::Backspace => {
+            app.input.pop();
+        }
         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => app.input.push(ch),
         _ => {}
     }
     Ok(false)
 }
 
-fn handle_command_input(app: &mut App, terminal: &mut DefaultTerminal, key: crossterm::event::KeyEvent) -> io::Result<bool> {
+fn handle_command_input(
+    app: &mut App,
+    terminal: &mut DefaultTerminal,
+    key: crossterm::event::KeyEvent,
+) -> io::Result<bool> {
     let matches = app.filtered_commands();
     match key.code {
         KeyCode::Esc => {
@@ -813,10 +948,14 @@ fn handle_command_input(app: &mut App, terminal: &mut DefaultTerminal, key: cros
                 app.edit_selected(terminal)?;
                 return Ok(false);
             }
-            if app.execute_command().map_err(to_io)? { return Ok(true); }
+            if app.execute_command().map_err(to_io)? {
+                return Ok(true);
+            }
         }
         KeyCode::Down => {
-            if !matches.is_empty() { app.command_selected = (app.command_selected + 1).min(matches.len() - 1); }
+            if !matches.is_empty() {
+                app.command_selected = (app.command_selected + 1).min(matches.len() - 1);
+            }
         }
         KeyCode::Up => {
             app.command_selected = app.command_selected.saturating_sub(1);

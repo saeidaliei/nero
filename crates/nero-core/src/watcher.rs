@@ -1,6 +1,9 @@
-use std::{path::{Path, PathBuf}, sync::mpsc::{self, Receiver}};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Receiver},
+};
 
-use notify::{recommended_watcher, RecursiveMode, Watcher};
+use notify::{RecursiveMode, Watcher, recommended_watcher};
 
 use crate::{Result, Workspace};
 

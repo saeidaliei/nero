@@ -87,16 +87,25 @@ struct NeroCoreNote {
 
 impl From<nero_core::Note> for NeroCoreNote {
     fn from(note: nero_core::Note) -> Self {
-        Self { summary: note.summary, document: note.document }
+        Self {
+            summary: note.summary,
+            document: note.document,
+        }
     }
 }
 
 fn to_tasks(tasks: TaskCounts) -> TaskDto {
-    TaskDto { open: tasks.open, done: tasks.done }
+    TaskDto {
+        open: tasks.open,
+        done: tasks.done,
+    }
 }
 
 fn to_wiki_link(link: WikiLink) -> WikiLinkDto {
-    WikiLinkDto { target: link.target, label: link.label }
+    WikiLinkDto {
+        target: link.target,
+        label: link.label,
+    }
 }
 
 fn workspace_from_env() -> Result<Workspace, String> {
@@ -112,19 +121,25 @@ fn workspace_from_env() -> Result<Workspace, String> {
 
 #[tauri::command]
 fn workspace_info(state: State<'_, AppState>) -> Result<WorkspaceDto, String> {
-    Ok(WorkspaceDto { root: state.workspace.root().to_string_lossy().to_string() })
+    Ok(WorkspaceDto {
+        root: state.workspace.root().to_string_lossy().to_string(),
+    })
 }
 
 #[tauri::command]
 fn list_notes(state: State<'_, AppState>) -> Result<Vec<NoteDto>, String> {
-    state.workspace.list_notes()
+    state
+        .workspace
+        .list_notes()
         .map(|notes| notes.into_iter().map(to_note).collect())
         .map_err(error_message)
 }
 
 #[tauri::command]
 fn read_note(query: String, state: State<'_, AppState>) -> Result<DocumentDto, String> {
-    state.workspace.read_note(&query)
+    state
+        .workspace
+        .read_note(&query)
         .map(to_document)
         .map_err(error_message)
 }
@@ -136,64 +151,96 @@ fn render_markdown(source: String) -> Result<String, String> {
 
 #[tauri::command]
 fn search_notes(query: String, state: State<'_, AppState>) -> Result<Vec<SearchDto>, String> {
-    state.workspace.search(&query)
-        .map(|results| results.into_iter().map(|result| SearchDto {
-            note: to_note(result.note),
-            score: result.score,
-            preview: result.preview,
-        }).collect())
+    state
+        .workspace
+        .search(&query)
+        .map(|results| {
+            results
+                .into_iter()
+                .map(|result| SearchDto {
+                    note: to_note(result.note),
+                    score: result.score,
+                    preview: result.preview,
+                })
+                .collect()
+        })
         .map_err(error_message)
 }
 
 #[tauri::command]
 fn backlinks(query: String, state: State<'_, AppState>) -> Result<Vec<NoteDto>, String> {
-    state.workspace.backlinks(&query)
+    state
+        .workspace
+        .backlinks(&query)
         .map(|notes| notes.into_iter().map(to_note).collect())
         .map_err(error_message)
 }
 
 #[tauri::command]
-fn resolve_link(source_path: String, target: String, state: State<'_, AppState>) -> Result<Option<NoteDto>, String> {
-    state.workspace.resolve_link(PathBuf::from(source_path).as_path(), &target)
+fn resolve_link(
+    source_path: String,
+    target: String,
+    state: State<'_, AppState>,
+) -> Result<Option<NoteDto>, String> {
+    state
+        .workspace
+        .resolve_link(PathBuf::from(source_path).as_path(), &target)
         .map(|note| note.map(to_note))
         .map_err(error_message)
 }
 
 #[tauri::command]
 fn create_note(title: String, state: State<'_, AppState>) -> Result<NoteDto, String> {
-    state.workspace.create_note(&title)
+    state
+        .workspace
+        .create_note(&title)
         .map(to_note)
         .map_err(error_message)
 }
 
-
 #[tauri::command]
 fn import_asset(source_path: String, state: State<'_, AppState>) -> Result<String, String> {
-    state.workspace.import_asset(PathBuf::from(source_path)).map_err(error_message)
+    state
+        .workspace
+        .import_asset(PathBuf::from(source_path))
+        .map_err(error_message)
 }
 
 #[tauri::command]
-fn read_asset_data_url(source_path: String, reference: String, state: State<'_, AppState>) -> Result<String, String> {
-    state.workspace.read_asset_data_url(PathBuf::from(source_path).as_path(), &reference).map_err(error_message)
+fn read_asset_data_url(
+    source_path: String,
+    reference: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .workspace
+        .read_asset_data_url(PathBuf::from(source_path).as_path(), &reference)
+        .map_err(error_message)
 }
 
 #[tauri::command]
-fn save_note(query: String, source: String, state: State<'_, AppState>) -> Result<DocumentDto, String> {
-    state.workspace.save_note(&query, &source)
+fn save_note(
+    query: String,
+    source: String,
+    state: State<'_, AppState>,
+) -> Result<DocumentDto, String> {
+    state
+        .workspace
+        .save_note(&query, &source)
         .map(to_document)
         .map_err(error_message)
 }
 
 #[tauri::command]
 fn today(state: State<'_, AppState>) -> Result<NoteDto, String> {
-    state.workspace.today()
-        .map(to_note)
-        .map_err(error_message)
+    state.workspace.today().map(to_note).map_err(error_message)
 }
 
 #[tauri::command]
 fn reindex(state: State<'_, AppState>) -> Result<usize, String> {
-    state.workspace.reindex()
+    state
+        .workspace
+        .reindex()
         .map(|stats| stats.indexed)
         .map_err(error_message)
 }
@@ -219,9 +266,9 @@ pub fn run() {
             let builder = tauri::Builder::default()
                 .plugin(tauri_plugin_dialog::init())
                 .manage(AppState {
-                workspace,
-                _watcher: Mutex::new(None),
-            });
+                    workspace,
+                    _watcher: Mutex::new(None),
+                });
             run_builder(builder);
             return;
         }

@@ -1,8 +1,13 @@
-use std::{collections::{HashMap, HashSet}, fs, path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+    time::Duration,
+};
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
-use crate::{document, NoteSummary, Result, SearchResult, Workspace};
+use crate::{NoteSummary, Result, SearchResult, Workspace, document};
 
 const SCHEMA_VERSION: i64 = 1;
 
@@ -69,11 +74,14 @@ impl Index {
             let metadata = fs::metadata(&absolute)?;
             let modified_ns = modified_ns(&metadata);
             let size = metadata.len() as i64;
-            let unchanged = existing
-                .get(&path_key)
-                .is_some_and(|(old_modified, old_size, old_title)| {
-                    *old_modified == modified_ns && *old_size == size && note.title.as_str() == old_title.as_str()
-                });
+            let unchanged =
+                existing
+                    .get(&path_key)
+                    .is_some_and(|(old_modified, old_size, old_title)| {
+                        *old_modified == modified_ns
+                            && *old_size == size
+                            && note.title.as_str() == old_title.as_str()
+                    });
 
             if unchanged {
                 continue;
@@ -87,7 +95,10 @@ impl Index {
                 "INSERT INTO note_search(path, title, body) VALUES (?1, ?2, ?3)",
                 params![path_key, &document.title, &body],
             )?;
-            transaction.execute("DELETE FROM links WHERE source_path = ?1", params![normalize_path(&note.path)])?;
+            transaction.execute(
+                "DELETE FROM links WHERE source_path = ?1",
+                params![normalize_path(&note.path)],
+            )?;
             for target in &document.wiki_links {
                 transaction.execute(
                     "INSERT OR IGNORE INTO links(source_path, target) VALUES (?1, ?2)",
@@ -146,7 +157,10 @@ impl Index {
         for row in rows {
             let (path, title, body, score) = row?;
             results.push(SearchResult {
-                note: NoteSummary { path: path.into(), title },
+                note: NoteSummary {
+                    path: path.into(),
+                    title,
+                },
                 score,
                 preview: crate::preview_for_query(&body, normalized),
             });
@@ -159,7 +173,9 @@ impl Index {
         target: &std::path::Path,
         notes: &[NoteSummary],
     ) -> Result<Vec<std::path::PathBuf>> {
-        let mut statement = self.connection.prepare("SELECT source_path, target FROM links ORDER BY source_path")?;
+        let mut statement = self
+            .connection
+            .prepare("SELECT source_path, target FROM links ORDER BY source_path")?;
         let rows = statement.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -179,7 +195,9 @@ impl Index {
     }
 
     fn existing_metadata(&self) -> Result<HashMap<String, (i64, i64, String)>> {
-        let mut statement = self.connection.prepare("SELECT path, modified_ns, size, title FROM notes")?;
+        let mut statement = self
+            .connection
+            .prepare("SELECT path, modified_ns, size, title FROM notes")?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,

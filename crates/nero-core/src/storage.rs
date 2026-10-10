@@ -1,13 +1,12 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::{atomic_write, NeroError, Result, Workspace};
+use crate::{NeroError, Result, Workspace, atomic_write};
 
 const STORAGE_CONFIG_VERSION: u32 = 1;
 const STORAGE_CONFIG_NAME: &str = "storage.json";
@@ -62,7 +61,12 @@ impl Workspace {
             .ok_or_else(|| NeroError::Message(format!("storage remote not found: {name}")))
     }
 
-    pub fn storage_add(&self, name: &str, target: &str, encrypt_backups: bool) -> Result<StorageRemote> {
+    pub fn storage_add(
+        &self,
+        name: &str,
+        target: &str,
+        encrypt_backups: bool,
+    ) -> Result<StorageRemote> {
         let name = name.trim();
         let target = target.trim();
         if !valid_storage_name(name) {
@@ -77,7 +81,9 @@ impl Workspace {
         fs::create_dir_all(self.metadata_dir())?;
         let mut config = self.load_storage_config()?;
         if config.remotes.iter().any(|remote| remote.name == name) {
-            return Err(NeroError::Message(format!("storage remote already exists: {name}")));
+            return Err(NeroError::Message(format!(
+                "storage remote already exists: {name}"
+            )));
         }
 
         let remote = StorageRemote {
@@ -132,11 +138,18 @@ impl Workspace {
         Ok(backups)
     }
 
-    pub fn storage_upload_file(&self, storage_name: &str, local_file: impl AsRef<Path>) -> Result<String> {
+    pub fn storage_upload_file(
+        &self,
+        storage_name: &str,
+        local_file: impl AsRef<Path>,
+    ) -> Result<String> {
         let remote = self.storage_get(storage_name)?;
         let local_file = local_file.as_ref();
         if !local_file.is_file() {
-            return Err(NeroError::Message(format!("backup file does not exist: {}", local_file.display())));
+            return Err(NeroError::Message(format!(
+                "backup file does not exist: {}",
+                local_file.display()
+            )));
         }
         let file_name = local_file
             .file_name()
@@ -159,7 +172,10 @@ impl Workspace {
         validate_remote_name(remote_name)?;
         let destination = normalize_path(destination.as_ref());
         if destination.exists() {
-            return Err(NeroError::Message(format!("destination already exists: {}", destination.display())));
+            return Err(NeroError::Message(format!(
+                "destination already exists: {}",
+                destination.display()
+            )));
         }
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
@@ -178,18 +194,24 @@ impl Workspace {
             return Ok(StorageConfig::default());
         }
         let contents = fs::read_to_string(&path)?;
-        let config = serde_json::from_str::<StorageConfig>(&contents)
-            .map_err(|error| NeroError::Message(format!("invalid Nero storage configuration: {error}")))?;
+        let config = serde_json::from_str::<StorageConfig>(&contents).map_err(|error| {
+            NeroError::Message(format!("invalid Nero storage configuration: {error}"))
+        })?;
         if config.format != "nero-storage" || config.version != STORAGE_CONFIG_VERSION {
-            return Err(NeroError::Message("unsupported Nero storage configuration".into()));
+            return Err(NeroError::Message(
+                "unsupported Nero storage configuration".into(),
+            ));
         }
         Ok(config)
     }
 
     fn save_storage_config(&self, config: &StorageConfig) -> Result<()> {
         let path = self.storage_config_path();
-        let encoded = serde_json::to_vec_pretty(config)
-            .map_err(|error| NeroError::Message(format!("could not serialize storage configuration: {error}")))?;
+        let encoded = serde_json::to_vec_pretty(config).map_err(|error| {
+            NeroError::Message(format!(
+                "could not serialize storage configuration: {error}"
+            ))
+        })?;
         atomic_write(&path, &encoded)
     }
 }
@@ -232,7 +254,10 @@ fn run_rclone(args: &[&str]) -> Result<String> {
 }
 
 fn valid_storage_name(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
 fn validate_remote_name(name: &str) -> Result<()> {
@@ -243,13 +268,19 @@ fn validate_remote_name(name: &str) -> Result<()> {
         || name == "."
         || name == ".."
     {
-        return Err(NeroError::Message("remote backup name must be a single filename".into()));
+        return Err(NeroError::Message(
+            "remote backup name must be a single filename".into(),
+        ));
     }
     Ok(())
 }
 
 fn join_remote_path(target: &str, name: &str) -> String {
-    format!("{}/{}", target.trim_end_matches('/'), name.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        target.trim_end_matches('/'),
+        name.trim_start_matches('/')
+    )
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
@@ -276,8 +307,14 @@ mod tests {
 
     #[test]
     fn joins_rclone_paths_without_duplicate_slashes() {
-        assert_eq!(join_remote_path("mega:nero/", "backup.age"), "mega:nero/backup.age");
-        assert_eq!(join_remote_path("mega:nero", "backup.age"), "mega:nero/backup.age");
+        assert_eq!(
+            join_remote_path("mega:nero/", "backup.age"),
+            "mega:nero/backup.age"
+        );
+        assert_eq!(
+            join_remote_path("mega:nero", "backup.age"),
+            "mega:nero/backup.age"
+        );
     }
 
     #[test]
@@ -293,13 +330,18 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let workspace = Workspace::init(&root).unwrap();
 
-        workspace.storage_add("mega", "mega:nero-backups", true).unwrap();
+        workspace
+            .storage_add("mega", "mega:nero-backups", true)
+            .unwrap();
         let remotes = workspace.storage_remotes().unwrap();
-        assert_eq!(remotes, vec![StorageRemote {
-            name: "mega".into(),
-            target: "mega:nero-backups".into(),
-            encrypt_backups: true,
-        }]);
+        assert_eq!(
+            remotes,
+            vec![StorageRemote {
+                name: "mega".into(),
+                target: "mega:nero-backups".into(),
+                encrypt_backups: true,
+            }]
+        );
 
         let removed = workspace.storage_remove("mega").unwrap();
         assert_eq!(removed.name, "mega");

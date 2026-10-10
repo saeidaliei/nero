@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use comrak::{markdown_to_html, Options};
+use comrak::{Options, markdown_to_html};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskCounts {
@@ -117,7 +117,7 @@ fn extract_wiki_links(body: &str) -> Vec<WikiLink> {
 
     while let Some(start_rel) = body[cursor..].find("[[") {
         let start = cursor + start_rel + 2;
-        let Some(end_rel) = body[start..].find("]]" ) else {
+        let Some(end_rel) = body[start..].find("]]") else {
             break;
         };
         let raw = body[start..start + end_rel].trim();
@@ -137,7 +137,10 @@ fn extract_wiki_links(body: &str) -> Vec<WikiLink> {
     // Keep document metadata deterministic while preserving first-seen order for distinct links.
     let mut deduped = Vec::with_capacity(links.len());
     for link in links {
-        if !deduped.iter().any(|existing: &WikiLink| existing.target.eq_ignore_ascii_case(&link.target)) {
+        if !deduped
+            .iter()
+            .any(|existing: &WikiLink| existing.target.eq_ignore_ascii_case(&link.target))
+        {
             deduped.push(link);
         }
     }

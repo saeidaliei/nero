@@ -5,8 +5,7 @@
 
 use std::{
     collections::BTreeMap,
-    env,
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -14,7 +13,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use nero_core::{is_nero_home_path, is_workspace_root, nero_home_dir, NeroError, Result, Workspace};
+use nero_core::{
+    NeroError, Result, Workspace, is_nero_home_path, is_workspace_root, nero_home_dir,
+};
 
 const CONFIG_FORMAT: &str = "nero-config";
 const CONFIG_VERSION: u32 = 1;
@@ -91,23 +92,34 @@ pub fn set_workspace_home(path: impl AsRef<Path>) -> Result<PathBuf> {
 /// Canonicalize the workspace container and reject any path inside an initialized workspace.
 /// Otherwise a parent workspace would index the child workspaces as if they were its own notes.
 fn canonical_workspace_home(path: &Path) -> Result<PathBuf> {
-    let absolute = if path.is_absolute() { path.to_path_buf() } else { env::current_dir()?.join(path) };
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
     // Keep the lexical form as well as a canonical form: on first run the home
     // may not exist yet, while after creation canonical paths also matter (symlinks).
     if is_nero_home_path(&absolute) {
         return Err(NeroError::Message(format!(
             "workspace home cannot be the Nero application home {}; use {}/workspaces instead",
-            absolute.display(), absolute.display()
+            absolute.display(),
+            absolute.display()
         )));
     }
 
     // Check the nearest existing directory before creating anything, so an invalid
     // nested home doesn't leave an empty directory inside a note workspace.
-    let anchor = absolute.ancestors().find(|candidate| candidate.is_dir()).ok_or_else(|| {
-        NeroError::Message(format!("cannot find an existing parent for workspace home {}", absolute.display()))
-    })?;
+    let anchor = absolute
+        .ancestors()
+        .find(|candidate| candidate.is_dir())
+        .ok_or_else(|| {
+            NeroError::Message(format!(
+                "cannot find an existing parent for workspace home {}",
+                absolute.display()
+            ))
+        })?;
     let canonical_anchor = fs::canonicalize(anchor)?;
-    if canonical_anchor.ancestors().any(|ancestor| is_workspace_root(ancestor)) {
+    if canonical_anchor.ancestors().any(is_workspace_root) {
         return Err(NeroError::Message(format!(
             "{} is inside an initialized Nero workspace; workspace home must be a separate parent directory",
             absolute.display()
@@ -117,7 +129,7 @@ fn canonical_workspace_home(path: &Path) -> Result<PathBuf> {
     fs::create_dir_all(&absolute)?;
     let canonical = fs::canonicalize(&absolute)?;
     // Recheck after canonicalization in case the directory tree changed concurrently.
-    if canonical.ancestors().any(|ancestor| is_workspace_root(ancestor)) {
+    if canonical.ancestors().any(is_workspace_root) {
         return Err(NeroError::Message(format!(
             "{} is inside an initialized Nero workspace; workspace home must be a separate parent directory",
             canonical.display()
@@ -138,11 +150,15 @@ pub fn reset_workspace_home() -> Result<PathBuf> {
 /// created becomes the default; later creations do not silently switch the default.
 pub fn create_workspace(name: &str) -> Result<PathBuf> {
     if !valid_workspace_name(name) {
-        return Err(NeroError::Message("workspace name must contain only letters, numbers, '.', '_' or '-'".into()));
+        return Err(NeroError::Message(
+            "workspace name must contain only letters, numbers, '.', '_' or '-'".into(),
+        ));
     }
     let mut config = load()?;
     if config.workspaces.contains_key(name) {
-        return Err(NeroError::Message(format!("workspace name already exists: {name}")));
+        return Err(NeroError::Message(format!(
+            "workspace name already exists: {name}"
+        )));
     }
     let home = match config.workspace_home_path.clone() {
         Some(home) => home,
@@ -153,7 +169,8 @@ pub fn create_workspace(name: &str) -> Result<PathBuf> {
     if path.exists() {
         return Err(NeroError::Message(format!(
             "{} already exists; use `nero workspace add {name} {}` to register an existing workspace",
-            path.display(), path.display()
+            path.display(),
+            path.display()
         )));
     }
     let workspace = Workspace::init(&path)?;
@@ -182,7 +199,11 @@ pub fn resolve_target(target: &str) -> Result<PathBuf> {
     let path = Path::new(target);
     // Explicit paths should still work if a user's aliases file is damaged; only
     // simple names need to consult the registry.
-    if path.is_absolute() || matches!(target, "." | "..") || target.contains('/') || target.contains('\\') {
+    if path.is_absolute()
+        || matches!(target, "." | "..")
+        || target.contains('/')
+        || target.contains('\\')
+    {
         return Ok(path.to_path_buf());
     }
     let config = load()?;
@@ -203,12 +224,16 @@ pub fn set_default_path(path: impl AsRef<Path>) -> Result<PathBuf> {
 
 pub fn add_workspace(name: &str, path: impl AsRef<Path>) -> Result<PathBuf> {
     if !valid_workspace_name(name) {
-        return Err(NeroError::Message("workspace name must contain only letters, numbers, '.', '_' or '-'".into()));
+        return Err(NeroError::Message(
+            "workspace name must contain only letters, numbers, '.', '_' or '-'".into(),
+        ));
     }
     let path = validate_workspace_path(path.as_ref())?;
     let mut config = load()?;
     if config.workspaces.contains_key(name) {
-        return Err(NeroError::Message(format!("workspace name already exists: {name}")));
+        return Err(NeroError::Message(format!(
+            "workspace name already exists: {name}"
+        )));
     }
     config.workspaces.insert(name.to_owned(), path.clone());
     save(&config)?;
@@ -218,7 +243,9 @@ pub fn add_workspace(name: &str, path: impl AsRef<Path>) -> Result<PathBuf> {
 pub fn use_workspace(name: &str) -> Result<PathBuf> {
     let mut config = load()?;
     let path = config.workspaces.get(name).cloned().ok_or_else(|| {
-        NeroError::Message(format!("unknown workspace `{name}`; use `nero workspace list`"))
+        NeroError::Message(format!(
+            "unknown workspace `{name}`; use `nero workspace list`"
+        ))
     })?;
     config.default_workspace_name = Some(name.to_owned());
     config.default_workspace_path = None;
@@ -229,7 +256,9 @@ pub fn use_workspace(name: &str) -> Result<PathBuf> {
 pub fn remove_workspace(name: &str) -> Result<PathBuf> {
     let mut config = load()?;
     let path = config.workspaces.remove(name).ok_or_else(|| {
-        NeroError::Message(format!("unknown workspace `{name}`; use `nero workspace list`"))
+        NeroError::Message(format!(
+            "unknown workspace `{name}`; use `nero workspace list`"
+        ))
     })?;
     if config.default_workspace_name.as_deref() == Some(name) {
         config.default_workspace_name = None;
@@ -266,12 +295,16 @@ fn validate_workspace_path(path: &Path) -> Result<PathBuf> {
         env::current_dir()?.join(path)
     };
     let canonical = fs::canonicalize(&absolute).map_err(|error| {
-        NeroError::Message(format!("cannot access workspace {}: {error}", absolute.display()))
+        NeroError::Message(format!(
+            "cannot access workspace {}: {error}",
+            absolute.display()
+        ))
     })?;
     if !canonical.is_dir() || !canonical.join(".nero").is_dir() {
         return Err(NeroError::Message(format!(
             "{} is not an initialized Nero workspace; run `nero init {}` first",
-            canonical.display(), canonical.display()
+            canonical.display(),
+            canonical.display()
         )));
     }
     Ok(canonical)
@@ -281,7 +314,9 @@ fn valid_workspace_name(name: &str) -> bool {
     !name.is_empty()
         && !matches!(name, "." | "..")
         && !name.starts_with('.')
-        && name.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
 fn load() -> Result<UserConfig> {
@@ -292,9 +327,12 @@ fn load_from(path: &Path) -> Result<UserConfig> {
     if !path.exists() {
         return Ok(UserConfig::default());
     }
-    let source = fs::read_to_string(&path)?;
+    let source = fs::read_to_string(path)?;
     let config: UserConfig = serde_json::from_str(&source).map_err(|error| {
-        NeroError::Message(format!("invalid Nero configuration at {}: {error}", path.display()))
+        NeroError::Message(format!(
+            "invalid Nero configuration at {}: {error}",
+            path.display()
+        ))
     })?;
     if config.format != CONFIG_FORMAT || config.version != CONFIG_VERSION {
         return Err(NeroError::Message(format!(
@@ -317,14 +355,21 @@ fn set_private_directory_permissions(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &Path) -> Result<()> { Ok(()) }
+fn set_private_directory_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
 
 fn save_to(config: &UserConfig, path: &Path) -> Result<()> {
-    let parent = path.parent().ok_or_else(|| NeroError::Message("Nero config path has no parent directory".into()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| NeroError::Message("Nero config path has no parent directory".into()))?;
     fs::create_dir_all(parent)?;
     // Only chmod Nero's own app-home directory; an explicit NERO_CONFIG_HOME may
     // point at a shared general-purpose config directory and should not be changed.
-    if nero_home_dir().ok().is_some_and(|home| path == home.join(CONFIG_FILE)) {
+    if nero_home_dir()
+        .ok()
+        .is_some_and(|home| path == home.join(CONFIG_FILE))
+    {
         set_private_directory_permissions(parent)?;
     }
     let contents = serde_json::to_vec_pretty(config)
@@ -332,7 +377,8 @@ fn save_to(config: &UserConfig, path: &Path) -> Result<()> {
     let mut temp = NamedTempFile::new_in(parent)?;
     temp.write_all(&contents)?;
     temp.as_file().sync_all()?;
-    temp.persist(&path).map_err(|error| NeroError::Io(error.error))?;
+    temp.persist(path)
+        .map_err(|error| NeroError::Io(error.error))?;
     Ok(())
 }
 
@@ -370,10 +416,12 @@ mod tests {
     fn user_config_round_trips_atomically() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("nero").join("config.json");
-        let mut config = UserConfig::default();
-        config.workspace_home_path = Some(PathBuf::from("/tmp/Nero"));
-        config.default_workspace_path = Some(PathBuf::from("/tmp/example-notes"));
-        config.workspaces.insert("research".into(), PathBuf::from("/tmp/research-notes"));
+        let config = UserConfig {
+            workspace_home_path: Some(PathBuf::from("/tmp/Nero")),
+            default_workspace_path: Some(PathBuf::from("/tmp/example-notes")),
+            workspaces: BTreeMap::from([("research".into(), PathBuf::from("/tmp/research-notes"))]),
+            ..UserConfig::default()
+        };
         save_to(&config, &path).unwrap();
 
         let loaded = load_from(&path).unwrap();
@@ -383,6 +431,7 @@ mod tests {
         assert_eq!(loaded.format, CONFIG_FORMAT);
         assert_eq!(loaded.version, CONFIG_VERSION);
     }
+
     #[test]
     fn app_home_is_not_treated_as_workspace_metadata() {
         let app_home = nero_home_dir().unwrap();
@@ -404,7 +453,9 @@ mod tests {
         let outer = Workspace::init(temporary.path().join("outer")).unwrap();
         let nested_home = outer.root().join("nested-home");
         assert!(canonical_workspace_home(&nested_home).is_err());
-        assert!(!nested_home.exists(), "invalid workspace home should not be created inside another workspace");
+        assert!(
+            !nested_home.exists(),
+            "invalid workspace home should not be created inside another workspace"
+        );
     }
-
 }

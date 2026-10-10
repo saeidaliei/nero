@@ -2,7 +2,6 @@
 
 ## 1.0.0 maintenance updates
 
-- Removed unnecessary parentheses in workspace-root detection and removed the unused config-view path field to keep the CLI warning-free.
 - Centralized user-level state under `~/.nero` by default: config, backup keys, local backups, and the `workspaces/` container.
 - Added `NERO_HOME` as an absolute-path override for relocating the complete application home and `nero home [show|path]` for inspecting active paths.
 - Reserved `~/.nero` as an application-home directory rather than letting workspace discovery mistake its parent for a workspace.

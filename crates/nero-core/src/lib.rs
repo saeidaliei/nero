@@ -1,18 +1,17 @@
 mod backup;
+mod document;
 mod encryption;
 mod git;
-mod document;
 mod index;
-mod watcher;
 mod storage;
+mod watcher;
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use std::{
     env,
     error::Error,
-    fmt,
-    fs,
+    fmt, fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
@@ -22,12 +21,12 @@ use chrono::{Local, NaiveDate};
 use tempfile::NamedTempFile;
 
 pub use backup::{BackupEntry, BackupManifest, BackupStats};
+pub use document::{Document, TaskCounts, WikiLink, render_html};
 pub use encryption::BackupKeyInfo;
 pub use git::GitStatus;
-pub use document::{render_html, Document, TaskCounts, WikiLink};
 pub use index::IndexStats;
-pub use watcher::WorkspaceWatcher;
 pub use storage::{RemoteBackup, StorageRemote};
+pub use watcher::WorkspaceWatcher;
 
 use index::Index;
 
@@ -38,21 +37,27 @@ pub type Result<T> = std::result::Result<T, NeroError>;
 /// deliberately requires an absolute path so behavior does not change with cwd.
 pub fn nero_home_dir() -> Result<PathBuf> {
     let override_path = env::var_os("NERO_HOME").map(PathBuf::from);
-    let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")).map(PathBuf::from);
+    let home = env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
     resolve_nero_home(override_path.as_deref(), home.as_deref())
 }
 
 fn resolve_nero_home(override_path: Option<&Path>, home: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = override_path {
         if !path.is_absolute() {
-            return Err(NeroError::Message("NERO_HOME must be an absolute path".into()));
+            return Err(NeroError::Message(
+                "NERO_HOME must be an absolute path".into(),
+            ));
         }
         if path.as_os_str().is_empty() {
             return Err(NeroError::Message("NERO_HOME cannot be empty".into()));
         }
         return Ok(path.to_path_buf());
     }
-    let home = home.ok_or_else(|| NeroError::Message("HOME/USERPROFILE is not set; cannot locate Nero home".into()))?;
+    let home = home.ok_or_else(|| {
+        NeroError::Message("HOME/USERPROFILE is not set; cannot locate Nero home".into())
+    })?;
     Ok(home.join(".nero"))
 }
 
@@ -60,11 +65,16 @@ fn resolve_nero_home(override_path: Option<&Path>, home: Option<&Path>) -> Resul
 /// `~/.nero` remains reserved even when `NERO_HOME` selects a different profile.
 pub fn is_nero_home_path(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
-    if nero_home_dir().ok().is_some_and(|home| same_path(path, &home)) {
+    if nero_home_dir()
+        .ok()
+        .is_some_and(|home| same_path(path, &home))
+    {
         return true;
     }
-    let default_home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))
-        .map(PathBuf::from).map(|home| home.join(".nero"));
+    let default_home = env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .map(|home| home.join(".nero"));
     default_home.is_some_and(|home| same_path(path, &home))
 }
 
@@ -82,7 +92,9 @@ pub fn is_workspace_root(path: impl AsRef<Path>) -> bool {
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {
-    if left == right { return true; }
+    if left == right {
+        return true;
+    }
     match (fs::canonicalize(left), fs::canonicalize(right)) {
         (Ok(left), Ok(right)) => left == right,
         _ => false,
@@ -109,9 +121,21 @@ impl fmt::Display for NeroError {
 }
 
 impl Error for NeroError {}
-impl From<std::io::Error> for NeroError { fn from(value: std::io::Error) -> Self { Self::Io(value) } }
-impl From<rusqlite::Error> for NeroError { fn from(value: rusqlite::Error) -> Self { Self::Sqlite(value) } }
-impl From<notify::Error> for NeroError { fn from(value: notify::Error) -> Self { Self::Notify(value) } }
+impl From<std::io::Error> for NeroError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+impl From<rusqlite::Error> for NeroError {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::Sqlite(value)
+    }
+}
+impl From<notify::Error> for NeroError {
+    fn from(value: notify::Error) -> Self {
+        Self::Notify(value)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteSummary {
@@ -159,7 +183,11 @@ impl Workspace {
 
     pub fn init(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        let root = if root.is_absolute() { root } else { env::current_dir()?.join(root) };
+        let root = if root.is_absolute() {
+            root
+        } else {
+            env::current_dir()?.join(root)
+        };
         // Do not let `nero init ~` create workspace metadata inside the app-home
         // directory itself, or reuse the app-home as a workspace marker.
         if is_nero_home_path(&root) || is_nero_home_path(root.join(".nero")) {
@@ -186,9 +214,15 @@ impl Workspace {
         )))
     }
 
-    pub fn root(&self) -> &Path { &self.root }
-    pub fn metadata_dir(&self) -> PathBuf { self.root.join(".nero") }
-    pub fn index_path(&self) -> PathBuf { self.metadata_dir().join("index.sqlite") }
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+    pub fn metadata_dir(&self) -> PathBuf {
+        self.root.join(".nero")
+    }
+    pub fn index_path(&self) -> PathBuf {
+        self.metadata_dir().join("index.sqlite")
+    }
 
     pub fn create_note(&self, title: &str) -> Result<NoteSummary> {
         let clean_title = title.trim();
@@ -202,21 +236,34 @@ impl Workspace {
                 self.relative_path(&path).display()
             )));
         }
-        if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         atomic_write(&path, format!("# {clean_title}\n\n").as_bytes())?;
-        Ok(NoteSummary { path: self.relative_path(&path), title: clean_title.to_owned() })
+        Ok(NoteSummary {
+            path: self.relative_path(&path),
+            title: clean_title.to_owned(),
+        })
     }
 
     pub fn read_note(&self, query: &str) -> Result<Note> {
-        let path = self.resolve_note(query)?.ok_or_else(|| NeroError::Message(format!("note not found: {query}")))?;
+        let path = self
+            .resolve_note(query)?
+            .ok_or_else(|| NeroError::Message(format!("note not found: {query}")))?;
         let body = fs::read_to_string(self.root.join(&path))?;
         let document = document::Document::parse(&body);
         let title = if document.title == "Untitled" {
-            path.file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_owned()
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Untitled")
+                .to_owned()
         } else {
             document.title.clone()
         };
-        Ok(Note { summary: NoteSummary { path, title }, document })
+        Ok(Note {
+            summary: NoteSummary { path, title },
+            document,
+        })
     }
 
     pub fn list_notes(&self) -> Result<Vec<NoteSummary>> {
@@ -231,18 +278,24 @@ impl Workspace {
     }
 
     pub fn save_note(&self, query: &str, source: &str) -> Result<Note> {
-        let path = self.resolve_note(query)?
+        let path = self
+            .resolve_note(query)?
             .ok_or_else(|| NeroError::Message(format!("note not found: {query}")))?;
         let absolute = self.root.join(&path);
         if absolute.extension().and_then(|s| s.to_str()) != Some("md") {
-            return Err(NeroError::Message("only Markdown notes can be saved".into()));
+            return Err(NeroError::Message(
+                "only Markdown notes can be saved".into(),
+            ));
         }
         let normalized_file = canonical_workspace_file(&self.root, &absolute)?
             .ok_or_else(|| NeroError::Message("note path escapes workspace".into()))?;
         atomic_write(&normalized_file, source.as_bytes())?;
         let document = document::Document::parse(source);
         let title = if document.title == "Untitled" {
-            path.file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_owned()
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Untitled")
+                .to_owned()
         } else {
             document.title.clone()
         };
@@ -269,13 +322,18 @@ impl Workspace {
             .and_then(|name| name.to_str())
             .ok_or_else(|| NeroError::Message("asset filename is not valid UTF-8".into()))?;
         if asset_mime_type(&source) == "application/octet-stream" {
-            return Err(NeroError::Message("only image assets can be imported".into()));
+            return Err(NeroError::Message(
+                "only image assets can be imported".into(),
+            ));
         }
         let clean_name = sanitize_asset_filename(original_name);
         let destination = unique_asset_path(&assets_dir, &clean_name);
         fs::copy(&source, &destination)?;
 
-        Ok(self.relative_path(&destination).to_string_lossy().replace('\\', "/"))
+        Ok(self
+            .relative_path(&destination)
+            .to_string_lossy()
+            .replace('\\', "/"))
     }
 
     /// Read a workspace-relative or note-relative asset as a data URL.
@@ -283,33 +341,49 @@ impl Workspace {
     /// Returning a data URL keeps the desktop UI independent of filesystem URL permissions
     /// while still allowing Markdown image syntax to remain ordinary and portable.
     pub fn read_asset_data_url(&self, source_note: &Path, reference: &str) -> Result<String> {
-        let without_fragment = reference.split_once('#').map_or(reference, |(path, _)| path);
-        let clean_reference = without_fragment.split_once('?').map_or(without_fragment, |(path, _)| path).trim();
+        let without_fragment = reference
+            .split_once('#')
+            .map_or(reference, |(path, _)| path);
+        let clean_reference = without_fragment
+            .split_once('?')
+            .map_or(without_fragment, |(path, _)| path)
+            .trim();
         if clean_reference.is_empty()
             || clean_reference.starts_with("http://")
             || clean_reference.starts_with("https://")
             || clean_reference.starts_with("data:")
             || Path::new(clean_reference).is_absolute()
         {
-            return Err(NeroError::Message("asset reference is not a local workspace path".into()));
+            return Err(NeroError::Message(
+                "asset reference is not a local workspace path".into(),
+            ));
         }
 
         let source_absolute = self.root.join(source_note);
         let source_canonical = fs::canonicalize(&source_absolute)
             .map_err(|_| NeroError::Message("source note is not inside the workspace".into()))?;
         if !source_canonical.starts_with(&self.root) || !source_canonical.is_file() {
-            return Err(NeroError::Message("source note is outside the workspace".into()));
+            return Err(NeroError::Message(
+                "source note is outside the workspace".into(),
+            ));
         }
         let note_parent = source_canonical.parent().unwrap_or(&self.root);
         let candidate = note_parent.join(clean_reference);
         let canonical = fs::canonicalize(&candidate)?;
-        if !canonical.starts_with(&self.root) || canonical.starts_with(&self.metadata_dir()) || !canonical.is_file() {
-            return Err(NeroError::Message("asset is outside the workspace or not a file".into()));
+        if !canonical.starts_with(&self.root)
+            || canonical.starts_with(self.metadata_dir())
+            || !canonical.is_file()
+        {
+            return Err(NeroError::Message(
+                "asset is outside the workspace or not a file".into(),
+            ));
         }
 
         let mime = asset_mime_type(&canonical);
         if mime == "application/octet-stream" {
-            return Err(NeroError::Message("only image assets can be displayed".into()));
+            return Err(NeroError::Message(
+                "only image assets can be displayed".into(),
+            ));
         }
         let bytes = fs::read(&canonical)?;
         let encoded = BASE64_STANDARD.encode(bytes);
@@ -353,7 +427,6 @@ impl Workspace {
         Ok(resolve_link_from_catalog(source_path, target, &notes))
     }
 
-
     /// Return notes whose `due: YYYY-MM-DD` date is today or earlier.
     /// Due items are computed from Markdown frontmatter each time; the index stores no task state.
     pub fn due_notes(&self) -> Result<Vec<DueNote>> {
@@ -361,13 +434,16 @@ impl Workspace {
     }
 
     fn due_notes_on(&self, today: &str) -> Result<Vec<DueNote>> {
-        let today_date = NaiveDate::parse_from_str(today, "%Y-%m-%d")
-            .map_err(|_| NeroError::Message(format!("invalid date `{today}`; expected YYYY-MM-DD")))?;
+        let today_date = NaiveDate::parse_from_str(today, "%Y-%m-%d").map_err(|_| {
+            NeroError::Message(format!("invalid date `{today}`; expected YYYY-MM-DD"))
+        })?;
         let mut due_notes = Vec::new();
         for summary in self.list_notes()? {
             let source = fs::read_to_string(self.root.join(&summary.path))?;
             let document = Document::parse(&source);
-            let Some(raw_due) = document.frontmatter.get("due") else { continue; };
+            let Some(raw_due) = document.frontmatter.get("due") else {
+                continue;
+            };
             let Ok(due_date) = NaiveDate::parse_from_str(raw_due.trim(), "%Y-%m-%d") else {
                 // A typo in optional metadata should not prevent the daily note from opening.
                 continue;
@@ -380,7 +456,11 @@ impl Workspace {
                 });
             }
         }
-        due_notes.sort_by(|a, b| a.due_date.cmp(&b.due_date).then_with(|| a.summary.path.cmp(&b.summary.path)));
+        due_notes.sort_by(|a, b| {
+            a.due_date
+                .cmp(&b.due_date)
+                .then_with(|| a.summary.path.cmp(&b.summary.path))
+        });
         Ok(due_notes)
     }
 
@@ -390,10 +470,16 @@ impl Workspace {
         let absolute = self.root.join(&path);
         match fs::symlink_metadata(&absolute) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(NeroError::Message("today's note path is a symlink; refusing to follow it".into()));
+                return Err(NeroError::Message(
+                    "today's note path is a symlink; refusing to follow it".into(),
+                ));
             }
             Ok(metadata) if metadata.is_file() => {}
-            Ok(_) => return Err(NeroError::Message("today's note path exists but is not a regular file".into())),
+            Ok(_) => {
+                return Err(NeroError::Message(
+                    "today's note path exists but is not a regular file".into(),
+                ));
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 fs::create_dir_all(absolute.parent().expect("daily has a parent"))?;
                 atomic_write(&absolute, format!("# {now}\n\n").as_bytes())?;
@@ -407,11 +493,17 @@ impl Workspace {
         let note = self.read_note(query)?;
         let editor = env::var("EDITOR")
             .or_else(|_| env::var("VISUAL"))
-            .map_err(|_| NeroError::Message("set $EDITOR or $VISUAL before using `nero edit`".into()))?;
+            .map_err(|_| {
+                NeroError::Message("set $EDITOR or $VISUAL before using `nero edit`".into())
+            })?;
         let mut parts = editor.split_whitespace();
-        let command = parts.next().ok_or_else(|| NeroError::Message("$EDITOR is empty".into()))?;
+        let command = parts
+            .next()
+            .ok_or_else(|| NeroError::Message("$EDITOR is empty".into()))?;
         let mut child = Command::new(command);
-        for arg in parts { child.arg(arg); }
+        for arg in parts {
+            child.arg(arg);
+        }
         child.arg(self.root.join(&note.summary.path));
         Ok(child.status()?)
     }
@@ -419,7 +511,10 @@ impl Workspace {
     pub fn doctor(&self) -> Result<Vec<String>> {
         let mut report = Vec::new();
         if self.metadata_dir().is_dir() {
-            report.push(format!("ok: {} directory exists", self.metadata_dir().file_name().unwrap().to_string_lossy()));
+            report.push(format!(
+                "ok: {} directory exists",
+                self.metadata_dir().file_name().unwrap().to_string_lossy()
+            ));
         } else {
             fs::create_dir_all(self.metadata_dir())?;
             report.push("fixing: .nero directory was missing".into());
@@ -427,7 +522,10 @@ impl Workspace {
         let notes = self.list_notes()?;
         report.push(format!("ok: {} Markdown note(s) found", notes.len()));
         let stats = self.reindex()?;
-        report.push(format!("ok: index refreshed ({} updated, {} removed)", stats.indexed, stats.removed));
+        report.push(format!(
+            "ok: index refreshed ({} updated, {} removed)",
+            stats.indexed, stats.removed
+        ));
 
         let mut broken_links = 0usize;
         for note in notes {
@@ -436,17 +534,25 @@ impl Workspace {
             let note_query = note.path.to_string_lossy().into_owned();
             let note_data = self.read_note(&note_query)?;
             for link in &note_data.document.wiki_links {
-                if self.resolve_link(&note.path, &link.target)?.is_none() { broken_links += 1; }
+                if self.resolve_link(&note.path, &link.target)?.is_none() {
+                    broken_links += 1;
+                }
             }
         }
-        if broken_links == 0 { report.push("ok: no broken wiki links found".into()); }
-        else { report.push(format!("warning: {broken_links} broken wiki link(s) found")); }
+        if broken_links == 0 {
+            report.push("ok: no broken wiki links found".into());
+        } else {
+            report.push(format!("warning: {broken_links} broken wiki link(s) found"));
+        }
 
         let storage = self.storage_remotes()?;
         if storage.is_empty() {
             report.push("info: no remote storage profiles configured".into());
         } else {
-            report.push(format!("ok: {} remote storage profile(s) configured", storage.len()));
+            report.push(format!(
+                "ok: {} remote storage profile(s) configured",
+                storage.len()
+            ));
         }
         Ok(report)
     }
@@ -454,16 +560,24 @@ impl Workspace {
     fn note_path_for_title(&self, title: &str) -> Result<PathBuf> {
         let slug = slugify(title);
         if slug.is_empty() {
-            return Err(NeroError::Message("title must contain at least one alphanumeric character".into()));
+            return Err(NeroError::Message(
+                "title must contain at least one alphanumeric character".into(),
+            ));
         }
         Ok(self.root.join(format!("{slug}.md")))
     }
 
     fn resolve_note(&self, query: &str) -> Result<Option<PathBuf>> {
         let raw = query.trim();
-        if raw.is_empty() { return Ok(None); }
+        if raw.is_empty() {
+            return Ok(None);
+        }
         let path_query = PathBuf::from(raw);
-        let candidates = [path_query.clone(), PathBuf::from(format!("{raw}.md")), PathBuf::from(format!("{}.md", slugify(raw)))];
+        let candidates = [
+            path_query.clone(),
+            PathBuf::from(format!("{raw}.md")),
+            PathBuf::from(format!("{}.md", slugify(raw))),
+        ];
         for candidate in candidates {
             if let Some(path) = resolve_existing_note_candidate(&self.root, &candidate)? {
                 return Ok(Some(self.relative_path(&path)));
@@ -474,9 +588,17 @@ impl Workspace {
         let mut matches = Vec::new();
         for note in self.list_notes()? {
             let path_key = path_match_key(&note.path);
-            let stem = note.path.file_stem().and_then(|v| v.to_str()).unwrap_or_default();
-            let stem_matches = path_match_key(Path::new(stem)) == path_match_key(Path::new(raw_stem));
-            if path_key == path_match_key(Path::new(raw)) || stem_matches || note.title.to_lowercase() == raw_lower {
+            let stem = note
+                .path
+                .file_stem()
+                .and_then(|v| v.to_str())
+                .unwrap_or_default();
+            let stem_matches =
+                path_match_key(Path::new(stem)) == path_match_key(Path::new(raw_stem));
+            if path_key == path_match_key(Path::new(raw))
+                || stem_matches
+                || note.title.to_lowercase() == raw_lower
+            {
                 matches.push(note.path);
             }
         }
@@ -484,11 +606,18 @@ impl Workspace {
     }
 
     fn relative_path(&self, absolute: &Path) -> PathBuf {
-        absolute.strip_prefix(&self.root).unwrap_or(absolute).to_path_buf()
+        absolute
+            .strip_prefix(&self.root)
+            .unwrap_or(absolute)
+            .to_path_buf()
     }
 }
 
-fn resolve_link_from_catalog(source_path: &Path, target: &str, notes: &[NoteSummary]) -> Option<NoteSummary> {
+fn resolve_link_from_catalog(
+    source_path: &Path,
+    target: &str,
+    notes: &[NoteSummary],
+) -> Option<NoteSummary> {
     let raw = target.trim();
     if raw.is_empty() {
         return None;
@@ -513,7 +642,10 @@ fn resolve_link_from_catalog(source_path: &Path, target: &str, notes: &[NoteSumm
     for candidate in path_candidates {
         let normalized = normalize_relative_path(&candidate)?;
         let normalized_key = path_match_key(Path::new(&normalized));
-        if let Some(note) = notes.iter().find(|note| path_match_key(&note.path) == normalized_key) {
+        if let Some(note) = notes
+            .iter()
+            .find(|note| path_match_key(&note.path) == normalized_key)
+        {
             return Some(note.clone());
         }
     }
@@ -525,13 +657,16 @@ fn resolve_link_from_catalog(source_path: &Path, target: &str, notes: &[NoteSumm
         return Some(note.clone());
     }
 
-    notes.iter().find(|note| {
-        note.path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .map(|value| path_match_key(Path::new(value)) == path_match_key(Path::new(stem)))
-            .unwrap_or(false)
-    }).cloned()
+    notes
+        .iter()
+        .find(|note| {
+            note.path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .map(|value| path_match_key(Path::new(value)) == path_match_key(Path::new(stem)))
+                .unwrap_or(false)
+        })
+        .cloned()
 }
 
 fn normalize_relative_path(path: &Path) -> Option<String> {
@@ -553,14 +688,20 @@ fn normalize_relative_path(path: &Path) -> Option<String> {
 fn path_match_key(path: &Path) -> String {
     let normalized = normalize_relative_path(path).unwrap_or_else(|| normalize_path(path));
     #[cfg(windows)]
-    { normalized.to_lowercase() }
+    {
+        normalized.to_lowercase()
+    }
     #[cfg(not(windows))]
-    { normalized }
+    {
+        normalized
+    }
 }
 
 fn resolve_existing_note_candidate(root: &Path, candidate: &Path) -> Result<Option<PathBuf>> {
     use std::path::Component;
-    if candidate.is_absolute() { return Ok(None); }
+    if candidate.is_absolute() {
+        return Ok(None);
+    }
     let clean = candidate.strip_prefix("./").unwrap_or(candidate);
     let mut current = root.to_path_buf();
     for component in clean.components() {
@@ -579,15 +720,23 @@ fn resolve_existing_note_candidate(root: &Path, candidate: &Path) -> Result<Opti
         }
     }
 
-    if current.extension().and_then(|s| s.to_str()) != Some("md") { return Ok(None); }
-    if !current.is_file() { return Ok(None); }
+    if current.extension().and_then(|s| s.to_str()) != Some("md") {
+        return Ok(None);
+    }
+    if !current.is_file() {
+        return Ok(None);
+    }
     let canonical = fs::canonicalize(&current)?;
-    if !canonical.starts_with(root) { return Ok(None); }
+    if !canonical.starts_with(root) {
+        return Ok(None);
+    }
     Ok(Some(canonical))
 }
 
 fn canonical_workspace_file(root: &Path, path: &Path) -> Result<Option<PathBuf>> {
-    if path.is_absolute() && !path.starts_with(root) { return Ok(None); }
+    if path.is_absolute() && !path.starts_with(root) {
+        return Ok(None);
+    }
     let relative = path.strip_prefix(root).unwrap_or(path);
     let mut current = root.to_path_buf();
     for component in relative.components() {
@@ -596,23 +745,37 @@ fn canonical_workspace_file(root: &Path, path: &Path) -> Result<Option<PathBuf>>
             Component::CurDir => {}
             Component::Normal(value) => {
                 current.push(value);
-                if let Ok(metadata) = fs::symlink_metadata(&current) {
-                    if metadata.file_type().is_symlink() { return Ok(None); }
+                if let Ok(metadata) = fs::symlink_metadata(&current)
+                    && metadata.file_type().is_symlink()
+                {
+                    return Ok(None);
                 }
             }
             _ => return Ok(None),
         }
     }
     let canonical = fs::canonicalize(&current)?;
-    if canonical.starts_with(root) { Ok(Some(canonical)) } else { Ok(None) }
+    if canonical.starts_with(root) {
+        Ok(Some(canonical))
+    } else {
+        Ok(None)
+    }
 }
 
-pub(crate) fn resolve_link_for_index(source_path: &Path, target: &str, notes: &[NoteSummary]) -> Option<NoteSummary> {
+pub(crate) fn resolve_link_for_index(
+    source_path: &Path,
+    target: &str,
+    notes: &[NoteSummary],
+) -> Option<NoteSummary> {
     resolve_link_from_catalog(source_path, target, notes)
 }
 
 fn canonicalize_root(root: PathBuf) -> Result<PathBuf> {
-    if root.exists() { Ok(fs::canonicalize(root)?) } else { Ok(root) }
+    if root.exists() {
+        Ok(fs::canonicalize(root)?)
+    } else {
+        Ok(root)
+    }
 }
 
 fn collect_markdown_files(root: &Path, out: &mut Vec<NoteSummary>) -> Result<()> {
@@ -621,17 +784,34 @@ fn collect_markdown_files(root: &Path, out: &mut Vec<NoteSummary>) -> Result<()>
             let entry = entry?;
             let path = entry.path();
             let name = entry.file_name();
-            if name.to_string_lossy().starts_with('.') { continue; }
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
             let file_type = fs::symlink_metadata(&path)?.file_type();
-            if file_type.is_symlink() { continue; }
-            if file_type.is_dir() { visit(root, &path, out)?; continue; }
-            if !file_type.is_file() || path.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                visit(root, &path, out)?;
+                continue;
+            }
+            if !file_type.is_file() || path.extension().and_then(|s| s.to_str()) != Some("md") {
+                continue;
+            }
             let body = fs::read_to_string(&path)?;
             let document = document::Document::parse(&body);
             let title = if document.title == "Untitled" {
-                path.file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_owned()
-            } else { document.title };
-            out.push(NoteSummary { path: path.strip_prefix(root).unwrap_or(&path).to_path_buf(), title });
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Untitled")
+                    .to_owned()
+            } else {
+                document.title
+            };
+            out.push(NoteSummary {
+                path: path.strip_prefix(root).unwrap_or(&path).to_path_buf(),
+                title,
+            });
         }
         Ok(())
     }
@@ -651,8 +831,12 @@ pub(crate) fn preview_for_query(body: &str, query: &str) -> String {
     let start = char_boundary_before(body, original_start.saturating_sub(240));
     let end = char_boundary_after(body, (original_end + 420).min(body.len()));
     let mut preview = body[start..end].replace('\n', " ");
-    if start > 0 { preview.insert_str(0, "…"); }
-    if end < body.len() { preview.push('…'); }
+    if start > 0 {
+        preview.insert(0, '…');
+    }
+    if end < body.len() {
+        preview.push('…');
+    }
     preview.trim().to_owned()
 }
 
@@ -662,7 +846,11 @@ fn lower_byte_to_original(body: &str, lower_target: usize, round_up: bool) -> us
         let lower_len = ch.to_lowercase().map(|c| c.len_utf8()).sum::<usize>();
         let next = lower_cursor + lower_len;
         if lower_target < next || (round_up && lower_target <= next) {
-            return if round_up { original_start + ch.len_utf8() } else { original_start };
+            return if round_up {
+                original_start + ch.len_utf8()
+            } else {
+                original_start
+            };
         }
         lower_cursor = next;
     }
@@ -670,18 +858,27 @@ fn lower_byte_to_original(body: &str, lower_target: usize, round_up: bool) -> us
 }
 
 fn char_boundary_before(body: &str, index: usize) -> usize {
-    if index >= body.len() { return body.len(); }
+    if index >= body.len() {
+        return body.len();
+    }
     let mut result = 0;
     for (start, _) in body.char_indices() {
-        if start > index { break; }
+        if start > index {
+            break;
+        }
         result = start;
     }
     result
 }
 
 fn char_boundary_after(body: &str, index: usize) -> usize {
-    if index >= body.len() { return body.len(); }
-    body.char_indices().find(|(start, _)| *start >= index).map(|(start, _)| start).unwrap_or(body.len())
+    if index >= body.len() {
+        return body.len();
+    }
+    body.char_indices()
+        .find(|(start, _)| *start >= index)
+        .map(|(start, _)| start)
+        .unwrap_or(body.len())
 }
 
 fn slugify(title: &str) -> String {
@@ -689,10 +886,14 @@ fn slugify(title: &str) -> String {
     let mut dash_pending = false;
     for ch in title.chars() {
         if ch.is_alphanumeric() {
-            if dash_pending && !result.is_empty() { result.push('-'); }
+            if dash_pending && !result.is_empty() {
+                result.push('-');
+            }
             result.extend(ch.to_lowercase());
             dash_pending = false;
-        } else if !result.is_empty() { dash_pending = true; }
+        } else if !result.is_empty() {
+            dash_pending = true;
+        }
     }
     result.trim_end_matches('-').to_owned()
 }
@@ -709,12 +910,19 @@ fn sanitize_asset_filename(name: &str) -> String {
         }
     }
     let trimmed = output.trim_matches('.').trim_matches('-').trim_matches('_');
-    if trimmed.is_empty() { "asset".to_owned() } else { trimmed.to_owned() }
+    if trimmed.is_empty() {
+        "asset".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 fn unique_asset_path(dir: &Path, name: &str) -> PathBuf {
     let base = Path::new(name);
-    let stem = base.file_stem().and_then(|value| value.to_str()).unwrap_or("asset");
+    let stem = base
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
     let extension = base.extension().and_then(|value| value.to_str());
     let mut candidate = dir.join(name);
     let mut suffix = 2usize;
@@ -730,7 +938,12 @@ fn unique_asset_path(dir: &Path, name: &str) -> PathBuf {
 }
 
 fn asset_mime_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|value| value.to_str()).map(|value| value.to_ascii_lowercase()).as_deref() {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
         Some("png") => "image/png",
         Some("jpg") | Some("jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
@@ -743,14 +956,16 @@ fn asset_mime_type(path: &Path) -> &'static str {
     }
 }
 
-
 #[cfg(test)]
 mod asset_tests {
     use super::*;
 
     #[test]
     fn sanitizes_asset_names_without_path_components() {
-        assert_eq!(sanitize_asset_filename("my image (final).png"), "my-image-_final_.png");
+        assert_eq!(
+            sanitize_asset_filename("my image (final).png"),
+            "my-image-_final_.png"
+        );
         assert_eq!(sanitize_asset_filename("../secret.txt"), "secret.txt");
     }
 
@@ -760,12 +975,17 @@ mod asset_tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create temp dir");
         fs::write(root.join("photo.png"), b"one").expect("write first file");
-        assert_eq!(unique_asset_path(&root, "photo.png").file_name().unwrap(), "photo-2.png");
+        assert_eq!(
+            unique_asset_path(&root, "photo.png").file_name().unwrap(),
+            "photo-2.png"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 }
 
-fn normalize_path(path: &Path) -> String { path.to_string_lossy().replace('\\', "/") }
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
 
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -776,7 +996,8 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     }
     temp.write_all(contents)?;
     temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|error| NeroError::Io(error.error))?;
+    temp.persist(path)
+        .map_err(|error| NeroError::Io(error.error))?;
     sync_parent_directory(parent)?;
     Ok(())
 }
@@ -800,7 +1021,8 @@ mod hardening_tests {
     use std::fs;
 
     fn temp_workspace(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("nero-hardening-{name}-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("nero-hardening-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         path
     }
@@ -883,7 +1105,11 @@ mod tests {
         let root = temp_workspace("search-index");
         let workspace = Workspace::init(&root).unwrap();
         workspace.create_note("Fourier Transform").unwrap();
-        fs::write(root.join("fourier-transform.md"), "# Fourier Transform\n\nFrequency domain analysis.\n").unwrap();
+        fs::write(
+            root.join("fourier-transform.md"),
+            "# Fourier Transform\n\nFrequency domain analysis.\n",
+        )
+        .unwrap();
         let results = workspace.search("frequency").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].note.title, "Fourier Transform");
@@ -894,10 +1120,15 @@ mod tests {
         let root = temp_workspace("save-note");
         let workspace = Workspace::init(&root).unwrap();
         workspace.create_note("Editor Test").unwrap();
-        let saved = workspace.save_note("editor-test", "# Edited\n\n$E=mc^2$\n").unwrap();
+        let saved = workspace
+            .save_note("editor-test", "# Edited\n\n$E=mc^2$\n")
+            .unwrap();
         assert_eq!(saved.summary.title, "Edited");
         assert_eq!(saved.document.math_count, 1);
-        assert_eq!(workspace.read_note("editor-test").unwrap().document.title, "Edited");
+        assert_eq!(
+            workspace.read_note("editor-test").unwrap().document.title,
+            "Edited"
+        );
     }
 
     #[test]
@@ -913,18 +1144,39 @@ mod tests {
         let root = temp_workspace("link-resolution");
         let workspace = Workspace::init(&root).unwrap();
         fs::create_dir_all(root.join("notes")).unwrap();
-        fs::write(root.join("notes/Index.md"), "# Index\n\n[[../math/Fourier|the transform]]\n[[../math/Fourier#definition]]\n").unwrap();
+        fs::write(
+            root.join("notes/Index.md"),
+            "# Index\n\n[[../math/Fourier|the transform]]\n[[../math/Fourier#definition]]\n",
+        )
+        .unwrap();
         fs::create_dir_all(root.join("math")).unwrap();
-        fs::write(root.join("math/Fourier.md"), "# Fourier Transform\n\nDefinition.\n").unwrap();
-        fs::write(root.join("math/Signal.md"), "---\ntitle: Signal Processing\n---\n").unwrap();
+        fs::write(
+            root.join("math/Fourier.md"),
+            "# Fourier Transform\n\nDefinition.\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("math/Signal.md"),
+            "---\ntitle: Signal Processing\n---\n",
+        )
+        .unwrap();
 
-        let resolved = workspace.resolve_link(Path::new("notes/Index.md"), "../math/Fourier").unwrap().unwrap();
+        let resolved = workspace
+            .resolve_link(Path::new("notes/Index.md"), "../math/Fourier")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.path, PathBuf::from("math/Fourier.md"));
 
-        let by_title = workspace.resolve_link(Path::new("notes/Index.md"), "Signal Processing").unwrap().unwrap();
+        let by_title = workspace
+            .resolve_link(Path::new("notes/Index.md"), "Signal Processing")
+            .unwrap()
+            .unwrap();
         assert_eq!(by_title.path, PathBuf::from("math/Signal.md"));
 
-        let by_fragment = workspace.resolve_link(Path::new("notes/Index.md"), "../math/Fourier#definition").unwrap().unwrap();
+        let by_fragment = workspace
+            .resolve_link(Path::new("notes/Index.md"), "../math/Fourier#definition")
+            .unwrap()
+            .unwrap();
         assert_eq!(by_fragment.path, PathBuf::from("math/Fourier.md"));
     }
 
@@ -934,7 +1186,11 @@ mod tests {
         let workspace = Workspace::init(&root).unwrap();
         workspace.create_note("Alpha").unwrap();
         workspace.create_note("Signal Processing").unwrap();
-        fs::write(root.join("alpha.md"), "# Alpha\n\nSee [[Signal Processing]].\n").unwrap();
+        fs::write(
+            root.join("alpha.md"),
+            "# Alpha\n\nSee [[Signal Processing]].\n",
+        )
+        .unwrap();
         let links = workspace.backlinks("Signal Processing").unwrap();
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].path, PathBuf::from("alpha.md"));
@@ -945,19 +1201,43 @@ mod tests {
         let root = temp_workspace("doctor");
         let workspace = Workspace::init(&root).unwrap();
         fs::create_dir_all(root.join("nested")).unwrap();
-        fs::write(root.join("nested/alpha.md"), "# Alpha\n\nSee [[Missing Note]].\n").unwrap();
+        fs::write(
+            root.join("nested/alpha.md"),
+            "# Alpha\n\nSee [[Missing Note]].\n",
+        )
+        .unwrap();
         let report = workspace.doctor().unwrap();
         assert!(report.iter().any(|line| line.contains("index refreshed")));
-        assert!(report.iter().any(|line| line.contains("1 broken wiki link")));
+        assert!(
+            report
+                .iter()
+                .any(|line| line.contains("1 broken wiki link"))
+        );
     }
     #[test]
     fn due_notes_appear_on_or_after_the_due_date() {
         let root = temp_workspace("due-notes");
         let workspace = Workspace::init(&root).unwrap();
-        fs::write(root.join("today.md"), "---\ntitle: Due today\ndue: 2026-10-10\n---\n\n- [ ] Finish this\n").unwrap();
-        fs::write(root.join("late.md"), "---\ntitle: Overdue\ndue: 2026-10-08\n---\n\n- [ ] Still open\n").unwrap();
-        fs::write(root.join("future.md"), "---\ntitle: Future\ndue: 2026-10-11\n---\n").unwrap();
-        fs::write(root.join("invalid.md"), "---\ntitle: Invalid date\ndue: tomorrow\n---\n").unwrap();
+        fs::write(
+            root.join("today.md"),
+            "---\ntitle: Due today\ndue: 2026-10-10\n---\n\n- [ ] Finish this\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("late.md"),
+            "---\ntitle: Overdue\ndue: 2026-10-08\n---\n\n- [ ] Still open\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("future.md"),
+            "---\ntitle: Future\ndue: 2026-10-11\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("invalid.md"),
+            "---\ntitle: Invalid date\ndue: tomorrow\n---\n",
+        )
+        .unwrap();
 
         let items = workspace.due_notes_on("2026-10-10").unwrap();
         assert_eq!(items.len(), 2);
@@ -967,9 +1247,7 @@ mod tests {
         assert!(!items[1].overdue);
         let _ = fs::remove_dir_all(root);
     }
-
 }
-
 
 #[cfg(test)]
 mod app_home_tests {
@@ -984,13 +1262,20 @@ mod app_home_tests {
     #[test]
     fn absolute_override_selects_custom_home() {
         let custom = std::env::temp_dir().join("nero-custom-home");
-        let resolved = resolve_nero_home(Some(custom.as_path()), Some(Path::new("/home/example"))).unwrap();
+        let resolved =
+            resolve_nero_home(Some(custom.as_path()), Some(Path::new("/home/example"))).unwrap();
         assert_eq!(resolved, custom);
     }
 
     #[test]
     fn relative_override_is_rejected() {
-        assert!(resolve_nero_home(Some(Path::new(".nero-custom")), Some(Path::new("/home/example"))).is_err());
+        assert!(
+            resolve_nero_home(
+                Some(Path::new(".nero-custom")),
+                Some(Path::new("/home/example"))
+            )
+            .is_err()
+        );
     }
 
     #[test]
