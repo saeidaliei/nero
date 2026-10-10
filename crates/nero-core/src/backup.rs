@@ -357,7 +357,11 @@ pub(crate) fn write_backup_archive<W: Write>(
     Ok((output, manifest))
 }
 
-fn write_home_backup_archive<W: Write>(home: &Path, source_home: &Path, output: W) -> Result<(W, BackupManifest)> {
+fn write_home_backup_archive<W: Write>(
+    home: &Path,
+    source_home: &Path,
+    output: W,
+) -> Result<(W, BackupManifest)> {
     let entries = collect_home_backup_entries(home)?;
     let manifest = BackupManifest {
         format: "nero-home-backup".into(),
