@@ -1002,10 +1002,10 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn sync_parent_directory(path: &Path) -> Result<()> {
+fn sync_parent_directory(_path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
-        let directory = fs::File::open(path)?;
+        let directory = fs::File::open(_path)?;
         directory.sync_all()?;
     }
     Ok(())
