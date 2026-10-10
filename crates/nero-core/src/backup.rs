@@ -164,7 +164,9 @@ impl Workspace {
                 "home-backup passphrase must be at least 12 characters".into(),
             ));
         }
-        let home = fs::canonicalize(home.as_ref())
+        let requested_home = home.as_ref();
+        let source_home = absolute_path(requested_home)?;
+        let home = fs::canonicalize(requested_home)
             .map_err(|error| NeroError::Message(format!("Nero home does not exist: {error}")))?;
         if !home.is_dir() {
             return Err(NeroError::Message(format!(
@@ -224,7 +226,7 @@ impl Workspace {
                 "could not initialize encrypted home backup: {error}"
             ))
         })?;
-        let (encrypted, manifest) = write_home_backup_archive(&home, encrypted)?;
+        let (encrypted, manifest) = write_home_backup_archive(&home, &source_home, encrypted)?;
         encrypted.finish().map_err(|error| {
             NeroError::Message(format!("could not finalize encrypted home backup: {error}"))
         })?;
@@ -355,14 +357,14 @@ pub(crate) fn write_backup_archive<W: Write>(
     Ok((output, manifest))
 }
 
-fn write_home_backup_archive<W: Write>(home: &Path, output: W) -> Result<(W, BackupManifest)> {
+fn write_home_backup_archive<W: Write>(home: &Path, source_home: &Path, output: W) -> Result<(W, BackupManifest)> {
     let entries = collect_home_backup_entries(home)?;
     let manifest = BackupManifest {
         format: "nero-home-backup".into(),
         version: MANIFEST_VERSION,
         created_at_unix: unix_now(),
         files: entries.clone(),
-        source_home: Some(home.to_string_lossy().into_owned()),
+        source_home: Some(source_home.to_string_lossy().into_owned()),
     };
     let manifest_json = serde_json::to_vec_pretty(&manifest).map_err(|error| {
         NeroError::Message(format!("could not serialize home backup manifest: {error}"))
