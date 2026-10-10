@@ -3,7 +3,13 @@
 <meta name="description" content="{{ .Description | default .Site.Params.description }}">
 <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
 <title>{{ if .IsHome }}Nero{{ else }}{{ .Title }} · Nero{{ end }}</title>
-<link rel="stylesheet" href="{{ "css/nero.css" | relURL }}">
+{{ $styles := resources.Get "css/nero.css" | minify | fingerprint }}
+<link
+  rel="stylesheet"
+  href="{{ $styles.RelPermalink }}"
+  integrity="{{ $styles.Data.Integrity }}"
+  crossorigin="anonymous"
+>
 <script>
   document.documentElement.dataset.theme = localStorage.getItem('nero-theme') || 'system';
 </script>

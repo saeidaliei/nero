@@ -20,6 +20,12 @@
         {{- end }}
       ];
     </script>
-    <script src="{{ "js/docs.js" | relURL }}" defer></script>
+    {{ $scripts := resources.Get "js/docs.js" | minify | fingerprint }}
+    <script
+            src="{{ $scripts.RelPermalink }}"
+            integrity="{{ $scripts.Data.Integrity }}"
+            crossorigin="anonymous"
+            defer
+            ></script>
   </body>
 </html>
