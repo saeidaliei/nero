@@ -195,4 +195,9 @@ Uploads use `rclone copyto` for a single backup object. Nero intentionally does 
 
 ## User-level workspace configuration
 
-The CLI stores default/named workspace paths in a small user config outside each notes directory. Explicit `--workspace`/`-w` and `NERO_WORKSPACE` overrides take precedence; otherwise local workspace discovery comes before the saved default, which acts as a fallback in arbitrary directories. The config contains paths and names only; it is not a second source of note content and does not travel with a workspace backup.
+The CLI stores default/named workspace paths in `~/.nero/config.json` by default (or `$NERO_HOME/config.json` when overridden), outside each workspace directory. Explicit `--workspace`/`-w` and `NERO_WORKSPACE` overrides take precedence; otherwise local workspace discovery comes before the saved default, which acts as a fallback in arbitrary directories. The config contains paths and names only; it is not a second source of note content and does not travel with a workspace backup.
+
+
+## Application home and workspaces
+
+The default application home is `~/.nero` (override with the absolute `NERO_HOME` environment variable). It contains `config.json`, `keys/`, `backups/`, and the default `workspaces/` parent. Each workspace remains a normal directory with Markdown as its source of truth and a workspace-local `.nero/` for the disposable index/settings. Keeping the app home separate from workspace metadata avoids mistaking the application root for a note workspace.

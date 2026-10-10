@@ -1,118 +1,109 @@
-# Nero backup design
+# Backup and recovery
 
-Nero keeps the live workspace as ordinary files and treats backup, encryption, and versioning as separate layers.
+Nero has two backup scopes. Use a **workspace backup** for one workspace, or a **home backup** to move/restore the entire Nero profile on a new machine.
 
-## Local snapshot
+## Workspace backup
 
-```text
-workspace
-   │
-   ▼
-ZIP snapshot
-├── manifest.json
-├── notes/...
-├── assets/...
-└── other workspace files
-```
-
-`.nero/` and `.git/` are excluded because they are cache/version-control internals.
-
-Each manifest entry records:
-
-- relative path
-- byte size
-- SHA-256 digest
-
-Commands:
+A workspace backup creates a portable ZIP with `manifest.json`, relative paths, file sizes, and SHA-256 hashes. `.nero/` (the disposable index/settings directory) and `.git/` (version history) are excluded.
 
 ```bash
 nero backup create
-nero backup inspect backup.zip
-nero backup verify backup.zip
-nero backup restore backup.zip /tmp/nero-restore
-nero backup recovery-test backup.zip
+ARCHIVE="$HOME/.nero/backups/nero-backup-1234567890.zip"  # replace with the path Nero printed
+nero backup verify "$ARCHIVE"
+nero backup restore "$ARCHIVE" ~/recovered-notes
+nero backup recovery-test "$ARCHIVE"
 ```
 
-## Encrypted snapshot
-
-0.9 adds an age-compatible encryption layer around the same ZIP format:
-
-```text
-workspace → ZIP → age encryption → .age
-```
-
-The private age X25519 identity is stored outside the workspace by default. The public recipient can be shared with people/devices that should be able to encrypt backups.
-
-Create a key once:
+The encrypted workspace form uses the age identity stored at `$NERO_HOME/keys/identity.txt` (default `~/.nero/keys/identity.txt`):
 
 ```bash
 nero key generate
-nero key show
-nero key path
-```
-
-Then:
-
-```bash
 nero backup create --encrypt
-nero backup verify nero-backup-123.age
-nero backup recovery-test nero-backup-123.age
-nero backup restore nero-backup-123.age /tmp/nero-restored
+nero backup verify backup.age
+nero backup recovery-test backup.age
+nero backup restore backup.age ~/recovered-notes
 ```
 
-A non-default identity can be supplied explicitly:
+Keep the private identity safe. A workspace `.age` snapshot cannot be decrypted without it.
+
+## Full-home backup (recommended for moving to a new machine)
+
+Create a passphrase-encrypted `.zip.age` containing all files under `$NERO_HOME` (default `~/.nero`) except the prior `backups/` directory and disposable SQLite index/WAL files. This includes `config.json`, backup keys, workspace Markdown, assets, `.git/` history, and workspace-local storage profiles.
 
 ```bash
-nero backup verify backup.age --identity /path/to/identity.txt
-nero backup restore backup.age /tmp/restore --identity /path/to/identity.txt
+nero backup home create
+ARCHIVE="$HOME/.nero/backups/nero-home-backup-1234567890.zip.age"  # replace with the path Nero printed
+nero backup home verify "$ARCHIVE"
+nero backup home recovery-test "$ARCHIVE"
 ```
 
-The encrypted backup is streamed through the age writer rather than first loading the entire workspace archive into memory. The age format is interoperable with `rage` and the reference age implementation. Nero currently uses the Rust `age` crate 0.12.1.
+Nero asks for a new passphrase twice when creating a backup and asks for it when verifying/restoring. The encrypted home archive uses a passphrase-based age recipient; it does **not** depend on the age identity stored inside the archive. That avoids the circular problem of encrypting the key with itself. Choose a strong passphrase and store it separately—the archive cannot be recovered without it.
 
-### Recovery rule
+The output path is printed after creation. Copy that `.zip.age` file to an external drive or remote storage. Do not upload a plain copy of `~/.nero`; it contains notes and the private backup identity.
 
-A backup is not considered healthy just because an archive exists. `recovery-test` decrypts when necessary, restores into a fresh temporary directory, and verifies every file against the backup manifest before deleting the temporary restore.
+### Restore on a new machine
 
-Keep at least one copy of the private identity outside the machine being backed up. Losing the identity without another copy means an age-encrypted backup cannot be decrypted.
+Install Nero, copy the home archive onto the new machine, then run:
+
+```bash
+nero backup home restore /path/to/nero-home-backup.zip.age
+nero workspace list
+nero workspace use personal
+nero today
+```
+
+The default restore destination is `~/.nero`. It must not already contain files; if it does, restore to a separate empty directory and use that path as `NERO_HOME` on subsequent runs. You can specify a destination explicitly:
+
+```bash
+nero backup home restore /path/to/nero-home-backup.zip.age ~/.local/share/nero
+```
+
+When restoring elsewhere, Nero rebases workspace paths stored under the original application home. Workspaces explicitly registered **outside** `$NERO_HOME` are not bundled by the home backup, so Nero refuses to create a supposedly complete archive in that state. Back those workspaces up individually with `nero backup create` or move them under the app home first. Nero also refuses a full-home backup if `NERO_CONFIG_HOME` or `NERO_CONFIG_DIR` changes the standard `config.json`/`keys/` locations, because that would make the restored profile incomplete or leave key permissions ambiguous. Unset those advanced overrides before making a portable full-home archive.
+
+`backups/` is excluded to prevent recursively embedding old archives in every new full-home backup. SQLite indexes are excluded because Nero rebuilds them; workspace-local settings such as `storage.json` are retained. Git history is included in full-home backups.
+
+### How it works
+
+```text
+$NERO_HOME
+    │
+    ├── config + keys + workspaces + Git history
+    │
+    ▼
+ZIP snapshot + SHA-256 manifest
+    │
+    ▼
+age passphrase encryption
+    │
+    ▼
+nero-home-backup-1234567890.zip.age
+```
+
+The archive records its source home so paths under that root can be rewritten when restoring on another user account or machine. Restore is limited to a new/empty directory, rejects symlinks in source home, checks archive paths against traversal, verifies file hashes, and restores restrictive permissions to the private key on Unix.
+
+## Remote workspace backups with rclone
+
+Configure a remote once, then push encrypted backups of a selected workspace:
+
+```bash
+rclone config
+nero key generate
+nero -w personal storage add mega mega:nero-backups/personal --encrypt
+nero -w personal backup push mega
+nero -w personal backup list mega
+```
+
+This is a **workspace** snapshot, not the full-home format. For a whole-machine restore, upload the `.zip.age` from `nero backup home create` using `rclone copyto` or another file transfer tool.
 
 ## Git versioning
 
-Git is for human-readable history and diffs, not as Nero's encrypted backup container:
+Git is for history/diffs and optional collaboration; backups are for disaster recovery. A private GitHub repository is not client-side encrypted. See the [root README quick start](../README.md#quick-start-private-github-repository) for the setup steps.
 
-```bash
-nero git init
-nero git status
-nero git snapshot "Write Fourier notes"
-nero git remote add origin git@github.com:you/notes.git
-nero git push
-nero git pull
-```
+## Safety rules
 
-The actual Git executable is used, so normal Git configuration, credential helpers, SSH keys, signed commits, GitHub, GitLab, and self-hosted Git servers remain available without Nero embedding a separate credential system.
-
-`.nero/` is ignored by the workspace `.gitignore`, so the disposable SQLite index is not committed.
-
-## Remote storage
-
-The 1.0 storage layer is provider-neutral:
-
-```text
-workspace
-   │
-   ▼
-backup snapshot
-   │
-   ▼
-optional age encryption
-   │
-   ▼
-rclone / another transport
-   │
-   ├── Mega
-   ├── S3-compatible storage
-   ├── Google Drive
-   ├── WebDAV
-   └── other configured providers
-```
-
-GitHub/GitLab are best treated as version-control remotes. Object storage is better suited to encrypted disaster-recovery snapshots and large assets.
+- Verify backup artifacts before relying on them.
+- Test recovery periodically with `recovery-test`.
+- Keep home-backup passphrases separate from the archives.
+- Keep workspace-backup identity files separate from `.age` snapshots.
+- Never place a backup output inside a workspace; home backups skip the `backups/` folder to avoid recursive inclusion.
+- Restore into a new/empty destination; do not overwrite a live workspace or Nero home in place.

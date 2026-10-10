@@ -2,6 +2,38 @@
 
 Nero treats cloud storage as a transport layer, not as part of the note format. The live workspace remains ordinary Markdown files. Remote storage receives backup artifacts created by Nero.
 
+## MEGA quick start
+
+1. Install [rclone](https://rclone.org/install/).
+2. Run `rclone config`, create a remote named `mega`, choose the Mega backend, and complete authentication. Test it with `rclone lsd mega:`. See the [rclone Mega backend guide](https://rclone.org/mega/).
+3. For an encrypted workspace snapshot, create the Nero age key once and add the remote to that workspace:
+
+   ```bash
+   nero key generate
+   nero -w personal storage add mega mega:nero-backups/personal --encrypt
+   nero -w personal backup push mega
+   nero -w personal backup list mega
+   ```
+
+This stores only the target and encryption setting in the workspace profile; rclone owns provider credentials. The encrypted workspace backup needs the private Nero identity to restore.
+
+For a portable **full-home** backup that includes the identity, run `nero backup home create` and upload the resulting passphrase-encrypted `.zip.age` file using `rclone copyto`. The home archive uses a separate passphrase, so it can recover the identity as well as the workspaces. Use the exact filename printed by Nero:
+
+```bash
+ARCHIVE="$HOME/.nero/backups/nero-home-backup-1234567890.zip.age"  # replace with the printed path
+rclone copyto "$ARCHIVE" "mega:nero-home-backups/$(basename "$ARCHIVE")"
+```
+
+On a new machine, download that object and restore it:
+
+```bash
+rclone copyto "mega:nero-home-backups/nero-home-backup-1234567890.zip.age" "$HOME/nero-home-backup.zip.age"
+nero backup home verify "$HOME/nero-home-backup.zip.age"
+nero backup home restore "$HOME/nero-home-backup.zip.age"
+```
+
+Replace the example filename with the actual archive name. See [Backups](BACKUP.md).
+
 ## Requirements
 
 Install `rclone` and configure at least one remote with:

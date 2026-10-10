@@ -18,7 +18,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use chrono::Local;
+use chrono::{Local, NaiveDate};
 use tempfile::NamedTempFile;
 
 pub use backup::{BackupEntry, BackupManifest, BackupStats};
@@ -32,6 +32,62 @@ pub use storage::{RemoteBackup, StorageRemote};
 use index::Index;
 
 pub type Result<T> = std::result::Result<T, NeroError>;
+
+/// Return Nero's application home. All user-level configuration, keys, backups,
+/// and the default workspace container live beneath this directory. `NERO_HOME`
+/// deliberately requires an absolute path so behavior does not change with cwd.
+pub fn nero_home_dir() -> Result<PathBuf> {
+    let override_path = env::var_os("NERO_HOME").map(PathBuf::from);
+    let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")).map(PathBuf::from);
+    resolve_nero_home(override_path.as_deref(), home.as_deref())
+}
+
+fn resolve_nero_home(override_path: Option<&Path>, home: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = override_path {
+        if !path.is_absolute() {
+            return Err(NeroError::Message("NERO_HOME must be an absolute path".into()));
+        }
+        if path.as_os_str().is_empty() {
+            return Err(NeroError::Message("NERO_HOME cannot be empty".into()));
+        }
+        return Ok(path.to_path_buf());
+    }
+    let home = home.ok_or_else(|| NeroError::Message("HOME/USERPROFILE is not set; cannot locate Nero home".into()))?;
+    Ok(home.join(".nero"))
+}
+
+/// Return whether a path is reserved for Nero's application home. The default
+/// `~/.nero` remains reserved even when `NERO_HOME` selects a different profile.
+pub fn is_nero_home_path(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    if nero_home_dir().ok().is_some_and(|home| same_path(path, &home)) {
+        return true;
+    }
+    let default_home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from).map(|home| home.join(".nero"));
+    default_home.is_some_and(|home| same_path(path, &home))
+}
+
+/// Identify a workspace without confusing the user's `~/.nero` app directory
+/// for a workspace marker sitting inside their home directory.
+pub fn is_workspace_root(path: impl AsRef<Path>) -> bool {
+    let root = path.as_ref();
+    // The app home itself is reserved even if stray marker directories happen
+    // to appear inside it; it must never be indexed as note content.
+    if is_nero_home_path(root) {
+        return false;
+    }
+    let metadata = root.join(".nero");
+    metadata.is_dir() && !is_nero_home_path(&metadata)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right { return true; }
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
 
 #[derive(Debug)]
 pub enum NeroError {
@@ -61,6 +117,14 @@ impl From<notify::Error> for NeroError { fn from(value: notify::Error) -> Self {
 pub struct NoteSummary {
     pub path: PathBuf,
     pub title: String,
+}
+
+/// A note with a `due: YYYY-MM-DD` frontmatter date that is due today or overdue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DueNote {
+    pub summary: NoteSummary,
+    pub due_date: String,
+    pub overdue: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +159,15 @@ impl Workspace {
 
     pub fn init(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
+        let root = if root.is_absolute() { root } else { env::current_dir()?.join(root) };
+        // Do not let `nero init ~` create workspace metadata inside the app-home
+        // directory itself, or reuse the app-home as a workspace marker.
+        if is_nero_home_path(&root) || is_nero_home_path(root.join(".nero")) {
+            return Err(NeroError::Message(format!(
+                "cannot initialize a workspace at {} because it overlaps Nero's application home; use `nero workspace create <name>` instead",
+                root.display()
+            )));
+        }
         fs::create_dir_all(&root)?;
         fs::create_dir_all(root.join(".nero"))?;
         Self::open(root)
@@ -103,7 +176,7 @@ impl Workspace {
     pub fn discover(start: impl AsRef<Path>) -> Result<Self> {
         let start = canonicalize_root(start.as_ref().to_path_buf())?;
         for candidate in start.ancestors() {
-            if candidate.join(".nero").is_dir() || candidate.join(".note").is_dir() {
+            if is_workspace_root(candidate) {
                 return Self::open(candidate);
             }
         }
@@ -280,6 +353,36 @@ impl Workspace {
         Ok(resolve_link_from_catalog(source_path, target, &notes))
     }
 
+
+    /// Return notes whose `due: YYYY-MM-DD` date is today or earlier.
+    /// Due items are computed from Markdown frontmatter each time; the index stores no task state.
+    pub fn due_notes(&self) -> Result<Vec<DueNote>> {
+        self.due_notes_on(&chrono_like_date())
+    }
+
+    fn due_notes_on(&self, today: &str) -> Result<Vec<DueNote>> {
+        let today_date = NaiveDate::parse_from_str(today, "%Y-%m-%d")
+            .map_err(|_| NeroError::Message(format!("invalid date `{today}`; expected YYYY-MM-DD")))?;
+        let mut due_notes = Vec::new();
+        for summary in self.list_notes()? {
+            let source = fs::read_to_string(self.root.join(&summary.path))?;
+            let document = Document::parse(&source);
+            let Some(raw_due) = document.frontmatter.get("due") else { continue; };
+            let Ok(due_date) = NaiveDate::parse_from_str(raw_due.trim(), "%Y-%m-%d") else {
+                // A typo in optional metadata should not prevent the daily note from opening.
+                continue;
+            };
+            if due_date <= today_date {
+                due_notes.push(DueNote {
+                    summary,
+                    due_date: due_date.format("%Y-%m-%d").to_string(),
+                    overdue: due_date < today_date,
+                });
+            }
+        }
+        due_notes.sort_by(|a, b| a.due_date.cmp(&b.due_date).then_with(|| a.summary.path.cmp(&b.summary.path)));
+        Ok(due_notes)
+    }
 
     pub fn today(&self) -> Result<NoteSummary> {
         let now = chrono_like_date();
@@ -846,5 +949,54 @@ mod tests {
         let report = workspace.doctor().unwrap();
         assert!(report.iter().any(|line| line.contains("index refreshed")));
         assert!(report.iter().any(|line| line.contains("1 broken wiki link")));
+    }
+    #[test]
+    fn due_notes_appear_on_or_after_the_due_date() {
+        let root = temp_workspace("due-notes");
+        let workspace = Workspace::init(&root).unwrap();
+        fs::write(root.join("today.md"), "---\ntitle: Due today\ndue: 2026-10-10\n---\n\n- [ ] Finish this\n").unwrap();
+        fs::write(root.join("late.md"), "---\ntitle: Overdue\ndue: 2026-10-08\n---\n\n- [ ] Still open\n").unwrap();
+        fs::write(root.join("future.md"), "---\ntitle: Future\ndue: 2026-10-11\n---\n").unwrap();
+        fs::write(root.join("invalid.md"), "---\ntitle: Invalid date\ndue: tomorrow\n---\n").unwrap();
+
+        let items = workspace.due_notes_on("2026-10-10").unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].summary.title, "Overdue");
+        assert!(items[0].overdue);
+        assert_eq!(items[1].summary.title, "Due today");
+        assert!(!items[1].overdue);
+        let _ = fs::remove_dir_all(root);
+    }
+
+}
+
+
+#[cfg(test)]
+mod app_home_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_hidden_nero_directory() {
+        let resolved = resolve_nero_home(None, Some(Path::new("/home/example"))).unwrap();
+        assert_eq!(resolved, PathBuf::from("/home/example/.nero"));
+    }
+
+    #[test]
+    fn absolute_override_selects_custom_home() {
+        let custom = std::env::temp_dir().join("nero-custom-home");
+        let resolved = resolve_nero_home(Some(custom.as_path()), Some(Path::new("/home/example"))).unwrap();
+        assert_eq!(resolved, custom);
+    }
+
+    #[test]
+    fn relative_override_is_rejected() {
+        assert!(resolve_nero_home(Some(Path::new(".nero-custom")), Some(Path::new("/home/example"))).is_err());
+    }
+
+    #[test]
+    fn app_home_is_reserved_and_not_a_workspace() {
+        let app_home = nero_home_dir().unwrap();
+        assert!(!is_workspace_root(&app_home));
+        assert!(Workspace::init(app_home).is_err());
     }
 }

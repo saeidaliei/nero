@@ -13,4 +13,5 @@ nero-core = { path = "../nero-core" }
 nero-tui = { path = "../nero-tui" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rpassword = "7.5.4"
 tempfile = "3.27.0"

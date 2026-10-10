@@ -1,18 +1,25 @@
 # Changelog
 
+## 1.0.0 maintenance updates
+
+- Removed unnecessary parentheses in workspace-root detection and removed the unused config-view path field to keep the CLI warning-free.
+- Centralized user-level state under `~/.nero` by default: config, backup keys, local backups, and the `workspaces/` container.
+- Added `NERO_HOME` as an absolute-path override for relocating the complete application home and `nero home [show|path]` for inspecting active paths.
+- Reserved `~/.nero` as an application-home directory rather than letting workspace discovery mistake its parent for a workspace.
+- Kept the version at 1.0.0 as requested.
+- Added passphrase-encrypted full-home backups (`nero backup home create/verify/restore/recovery-test`) for machine-to-machine recovery; config paths are rebased during restore.
+- Added Quick Start instructions for private GitHub version history and rclone-backed Mega backups.
+
 ## 1.0.0 maintenance notes
 
+- Added a configurable workspace home (default `~/.nero/workspaces`) and `nero workspace create <name>` so new workspaces stay organized beneath one parent.
+- Added date-only `due: YYYY-MM-DD` frontmatter surfaced by `nero today`, with overdue items labeled and no separate task database.
 - Reworked the root README around real features, installation, a short quick start, common commands, and links to the documentation set.
 - Added persistent user-level workspace configuration: set a default once, register named workspaces, switch defaults, and use `-w`/`--workspace` for one-command overrides.
-- Added a CLI regression test for workspace option extraction and smoke coverage for commands from outside the workspace directory.
-- Added a workspace configuration guide and a reminders design document. Reminder notifications are documented as planned, not presented as already implemented.
-
-- Add the `e` key and `:edit` command to the TUI. They temporarily release the terminal to `$EDITOR`, restore the TUI afterward, and reload the edited note.
-- Document TUI editing and the `$EDITOR` / `$VISUAL` setup.
-
-- Document the npm-first Tauri CLI setup and add `tauri:dev`, `tauri:build`, and `tauri:info` scripts.
-- Use `npm install` until a generated and committed `package-lock.json` is available; do not recommend `npm ci` without a lockfile.
-
+- Added regression coverage for workspace selection and due-date behavior, plus smoke coverage for commands run outside the workspace directory.
+- Added `e` and `:edit` to the TUI; they release the terminal to `$EDITOR`, restore the TUI afterward, and reload the edited note.
+- Documented the npm-first Tauri CLI setup and added `tauri:dev`, `tauri:build`, and `tauri:info` scripts.
+- Fixed the smoke-test frontmatter writer and pointed encrypted remote-restore coverage at the actual `identity.txt` key path.
 
 ## 1.0.0
 
@@ -142,7 +149,7 @@ Nero's document engine milestone.
 - Added cross-platform Markdown file watching
 - Added `render`, `reindex`, and `watch` commands
 - Added the first Ratatui TUI reader shell
-- Moved workspace metadata from legacy `.note` to `.nero` (legacy discovery remains supported)
+- Workspace-local application metadata lives under `.nero/`.
 
 ### 1.0.0 build fixes (post-test)
 

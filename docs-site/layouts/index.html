@@ -1,8 +1,8 @@
 {{ define "main" }}
 <section class="hero">
   <div class="eyebrow">LOCAL-FIRST KNOWLEDGE SYSTEM · {{ .Site.Params.version }}</div>
-  <h1>A small place<br>for your thoughts.</h1>
-  <p class="hero-lead">Plain Markdown. Local files. Fast search. Beautiful reading. No lock-in.</p>
+  <h1>Nero</h1>
+  <p class="hero-lead">Markdown notes, search, wiki links, and mathematical notation across CLI, terminal, and desktop.</p>
   <div class="hero-actions">
     <a class="button button-primary" href="{{ "docs/usage/" | relURL }}">Get started</a>
     <a class="button button-quiet" href="{{ .Site.Params.projectURL }}">View source ↗</a>
@@ -16,6 +16,7 @@
       <a href="{{ "docs/usage/" | relURL }}"><strong>Usage</strong><span>Install Nero and learn the daily workflow.</span></a>
       <a href="{{ "docs/markdown/" | relURL }}"><strong>Markdown</strong><span>Notes, math, wiki links, tasks, and assets.</span></a>
       <a href="{{ "docs/workspaces/" | relURL }}"><strong>Workspaces</strong><span>Set a default and switch between note collections.</span></a>
+      <a href="{{ "docs/app-home/" | relURL }}"><strong>Application home</strong><span>Understand ~/.nero, config, keys, and relocation.</span></a>
       <a href="{{ "docs/gui/" | relURL }}"><strong>Desktop</strong><span>The elegant graphical interface.</span></a>
     </div>
   </div>
@@ -43,7 +44,7 @@
     <a href="{{ "docs/recovery/" | relURL }}">Recovery</a>
     <a href="{{ "docs/changelog/" | relURL }}">Changelog</a>
     <a href="{{ "docs/roadmap/" | relURL }}">Roadmap</a>
-    <a href="{{ "docs/reminders/" | relURL }}">Reminders (planned)</a>
+    <a href="{{ "docs/due-dates/" | relURL }}">Due dates</a>
   </div>
 </section>
 

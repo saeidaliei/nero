@@ -5,11 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 ALT_WORKSPACE="${TMP}-research"
 USER_CONFIG="${TMP}-user-config"
-trap 'rm -rf "$TMP" "$ALT_WORKSPACE" "$USER_CONFIG"' EXIT
+WORKSPACE_HOME="${TMP}-workspace-home"
+NERO_HOME_DIR="${TMP}-nero-home"
+trap 'rm -rf "$TMP" "$ALT_WORKSPACE" "$USER_CONFIG" "$WORKSPACE_HOME" "$NERO_HOME_DIR"' EXIT
 
 # This script is a shell-level smoke test for the expected CLI UX.
 # It requires a compiled `nero` binary at $NERO_BIN and a working `git` executable.
 NERO_BIN="${NERO_BIN:-$ROOT/target/debug/nero}"
+# Keep the smoke test isolated from the invoking user's real Nero installation.
+export NERO_HOME="$NERO_HOME_DIR"
+export NERO_CONFIG_HOME="$USER_CONFIG"
 
 if [[ ! -x "$NERO_BIN" ]]; then
   echo "nero binary not found: $NERO_BIN" >&2
@@ -21,7 +26,7 @@ cd "$TMP"
 "$NERO_BIN" new "Fourier Transform"
 mkdir -p math/notes
 printf '# Fourier Transform\n\nSee [[math/Signal Processing|the signal note]].\n' > math/notes/fourier-transform.md
-printf '---\ntitle: Signal Processing\n---\n' > math/Signal.md
+printf '%s\n' '---' 'title: Signal Processing' '---' > math/Signal.md
 "$NERO_BIN" find fourier-transform
 "$NERO_BIN" backlinks "Signal Processing"
 "$NERO_BIN" today
@@ -30,7 +35,9 @@ printf '---\ntitle: Signal Processing\n---\n' > math/Signal.md
 "$NERO_BIN" doctor
 
 # Global workspace preferences make ordinary commands work without changing directory.
-export NERO_CONFIG_HOME="$USER_CONFIG"
+"$NERO_BIN" home path | grep -F "$NERO_HOME_DIR"
+"$NERO_BIN" workspace create app-home-test
+test -d "$NERO_HOME_DIR/workspaces/app-home-test/.nero"
 "$NERO_BIN" workspace set "$TMP"
 cd /tmp
 "$NERO_BIN" new "Created from outside workspace"
@@ -108,5 +115,15 @@ REMOTE_NAME="$(basename "$REMOTE_FILE")"
 test -n "$REMOTE_NAME"
 PATH="$FAKE_BIN:$PATH" "$NERO_BIN" backup list smoke | grep -F "$REMOTE_NAME"
 REMOTE_RESTORE="$TMP-remote-restore"
-PATH="$FAKE_BIN:$PATH" "$NERO_BIN" backup pull smoke "$REMOTE_NAME" "$REMOTE_RESTORE" --identity "$NERO_CONFIG_DIR/backup-identity.txt"
+PATH="$FAKE_BIN:$PATH" "$NERO_BIN" backup pull smoke "$REMOTE_NAME" "$REMOTE_RESTORE" --identity "$NERO_CONFIG_DIR/identity.txt"
 test -f "$REMOTE_RESTORE/math/Signal.md"
+
+# The shared workspace home creates separate workspace directories and works from anywhere.
+"$NERO_BIN" workspace home set "$WORKSPACE_HOME"
+"$NERO_BIN" workspace create home-test
+test -d "$WORKSPACE_HOME/home-test/.nero"
+"$NERO_BIN" workspace use home-test
+cd /tmp
+"$NERO_BIN" new "Due test"
+printf '%s\n' '---' 'title: Due test' 'due: 2000-01-01' '---' '# Due test' > "$WORKSPACE_HOME/home-test/due-test.md"
+"$NERO_BIN" today | grep -F '[overdue] Due test'

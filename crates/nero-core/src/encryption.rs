@@ -2,7 +2,7 @@ use std::{env, fs, io::Write, path::{Path, PathBuf}, str::FromStr};
 
 use age::{secrecy::ExposeSecret, Decryptor, Encryptor};
 
-use crate::{backup, atomic_write, BackupManifest, BackupStats, NeroError, Result, Workspace};
+use crate::{backup, atomic_write, nero_home_dir, BackupManifest, BackupStats, NeroError, Result, Workspace};
 use tempfile::{NamedTempFile, TempDir};
 
 const CONFIG_ENV: &str = "NERO_CONFIG_DIR";
@@ -16,14 +16,17 @@ pub struct BackupKeyInfo {
 }
 
 impl Workspace {
-    /// Returns Nero's user-level configuration directory.
-    /// The private age identity is intentionally stored outside the workspace by default.
+    /// Returns the user-level backup-key directory (normally `$NERO_HOME/keys`).
+    /// The private age identity is intentionally stored outside each workspace.
     pub fn config_dir() -> Result<PathBuf> {
         default_config_dir()
     }
 
     pub fn identity_path() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join(IDENTITY_FILE))
+        let target_dir = Self::config_dir()?;
+        let target = target_dir.join(IDENTITY_FILE);
+
+        Ok(target)
     }
 
     pub fn recipient_path() -> Result<PathBuf> {
@@ -32,12 +35,17 @@ impl Workspace {
 
     /// Generate the user's default age X25519 identity and store it outside the workspace.
     pub fn generate_backup_key(force: bool) -> Result<BackupKeyInfo> {
+        let existing_identity_path = Self::identity_path()?;
         let config = Self::config_dir()?;
         fs::create_dir_all(&config)?;
+        set_private_directory_permissions(&config)?;
+        if env::var_os(CONFIG_ENV).is_none() {
+            set_private_directory_permissions(&nero_home_dir()?)?;
+        }
         let identity_path = config.join(IDENTITY_FILE);
         let recipient_path = config.join(RECIPIENT_FILE);
 
-        if identity_path.exists() && !force {
+        if existing_identity_path.exists() && !force {
             return Err(NeroError::Message(format!(
                 "backup identity already exists at {}; use `nero key generate --force` to replace it",
                 identity_path.display()
@@ -177,32 +185,10 @@ fn backup_destination_inside_workspace(destination: &Path, workspace: &Path) -> 
 
 fn default_config_dir() -> Result<PathBuf> {
     if let Some(path) = env::var_os(CONFIG_ENV) {
+        // Explicit per-key-directory override retained for advanced setups.
         return Ok(PathBuf::from(path));
     }
-
-    #[cfg(windows)]
-    {
-        let base = env::var_os("APPDATA")
-            .ok_or_else(|| NeroError::Message("APPDATA is not set; set NERO_CONFIG_DIR to choose Nero's key location".into()))?;
-        return Ok(PathBuf::from(base).join("nero"));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let home = env::var_os("HOME")
-            .ok_or_else(|| NeroError::Message("HOME is not set; set NERO_CONFIG_DIR to choose Nero's key location".into()))?;
-        return Ok(PathBuf::from(home).join("Library").join("Application Support").join("Nero"));
-    }
-
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        if let Some(path) = env::var_os("XDG_CONFIG_HOME") {
-            return Ok(PathBuf::from(path).join("nero"));
-        }
-        let home = env::var_os("HOME")
-            .ok_or_else(|| NeroError::Message("HOME is not set; set NERO_CONFIG_DIR to choose Nero's key location".into()))?;
-        Ok(PathBuf::from(home).join(".config").join("nero"))
-    }
+    Ok(nero_home_dir()?.join("keys"))
 }
 
 fn normalize_destination(destination: &Path) -> PathBuf {
@@ -219,6 +205,16 @@ fn is_age_backup(path: &Path) -> Result<bool> {
     let read = std::io::Read::read(&mut file, &mut header)?;
     Ok(header[..read].starts_with(b"age-encryption.org/v1\n"))
 }
+
+#[cfg(unix)]
+fn set_private_directory_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_directory_permissions(_path: &Path) -> Result<()> { Ok(()) }
 
 fn set_private_file_permissions(path: &Path) -> Result<()> {
     #[cfg(unix)]

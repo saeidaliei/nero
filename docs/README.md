@@ -5,11 +5,17 @@ This directory contains the detailed documentation for Nero. The root `README.md
 ## Start here
 
 - [Usage](USAGE.md) — installation, everyday CLI/TUI/GUI usage, and commands.
-- [Workspace configuration](WORKSPACES.md) — default workspaces, aliases, `-w`, and configuration paths.
+- [Application home](APP_HOME.md) — `~/.nero`, configuration, keys, backup storage, and relocation with `NERO_HOME`.
+- [Workspace configuration](WORKSPACES.md) — workspace folders, named workspaces, `-w`, and selection behavior.
 - [Markdown format](MARKDOWN.md) — the supported Markdown, math, wiki-link, frontmatter, task, and asset conventions.
+- [Git versioning](GIT.md) — private GitHub repository setup, history, and cloning.
 - [Architecture](DESIGN.md) — the core model and how the CLI, TUI, GUI, index, backups, Git, and storage relate.
 - [GUI](GUI.md) — desktop development and frontend details.
 - [Development](DEVELOPMENT.md) — building, testing, formatting, local tooling, and contributing.
+
+## Everyday use
+
+- [Due dates](DUE_DATES.md) — date-only frontmatter surfaced by `nero today`.
 
 ## Data safety and portability
 
@@ -17,7 +23,6 @@ This directory contains the detailed documentation for Nero. The root `README.md
 - [Recovery](RECOVERY.md) — disaster recovery and encrypted-backup recovery procedures.
 - [Security](SECURITY.md) — workspace boundaries, encryption, secrets, and threat model notes.
 - [Storage](STORAGE.md) — remote backup targets through `rclone`.
-- [Reminders](REMINDERS.md) — proposed Markdown-based reminders and notification delivery.
 
 ## Project maintenance
 

@@ -37,7 +37,7 @@ fn is_user_markdown(path: &Path, root: &Path) -> bool {
     if !path.starts_with(root) {
         return false;
     }
-    if path.components().any(|part| part.as_os_str() == ".nero" || part.as_os_str() == ".note") {
+    if path.components().any(|part| part.as_os_str() == ".nero") {
         return false;
     }
     path.extension().and_then(|ext| ext.to_str()) == Some("md")

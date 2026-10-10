@@ -11,7 +11,7 @@ npm install --include=dev
 NERO_WORKSPACE="$HOME/notes" npm run tauri:dev
 ```
 
-For normal use, run `nero gui` from any directory after configuring `nero workspace set ~/notes`; Nero passes the selected workspace to the GUI. `NERO_WORKSPACE` can override the selected workspace for scripts. When launching the development app directly, set `NERO_WORKSPACE` as shown above. See [Workspace configuration](WORKSPACES.md).
+For normal use, run `nero gui` from any directory after configuring a default workspace with `nero workspace create personal` (or `nero workspace use <name>`); Nero passes the selected workspace to the GUI. `NERO_WORKSPACE` can override the selected workspace for scripts. When launching the development app directly, set `NERO_WORKSPACE` as shown above. See [Workspace configuration](WORKSPACES.md).
 
 ## Responsibilities
 

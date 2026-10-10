@@ -1,72 +1,116 @@
-# Workspace configuration
+# Workspaces
 
-Nero does not require you to `cd` into your notes directory before every command. Set a default workspace once, or register several named workspaces.
+Nero keeps its user-level state in one application home and stores named workspaces underneath it by default. On Linux and macOS the default application home is `~/.nero`; on Windows it is `%USERPROFILE%\.nero`.
 
-## One workspace
-
-Create a workspace and set it as your default:
-
-```bash
-nero init ~/notes
-nero workspace set ~/notes
+```text
+~/.nero/
+├── config.json       # default workspace and named workspace registry
+├── keys/             # age backup identity and public recipient
+├── backups/          # default local backup destination
+└── workspaces/
+    ├── personal/
+    │   ├── .nero/    # disposable index and workspace-local settings
+    │   ├── daily/
+    │   └── ...md
+    ├── research/
+    │   ├── .nero/
+    │   └── ...md
+    └── writing/
+        ├── .nero/
+        └── ...md
 ```
 
-After that, commands such as these work from any current directory:
+Each workspace is an independent directory containing ordinary Markdown files. Its `.nero/` directory contains the rebuildable SQLite index and workspace-local settings such as remote-storage profiles. The app home itself is not a workspace.
+
+## Start here
 
 ```bash
-nero list
-nero find "something"
-nero edit "An idea"
-nero tui
-```
-
-
-`nero workspace set` accepts an initialized workspace (one containing `.nero/`). The path is saved as a canonical absolute path in Nero's per-user config, not in the notes folder.
-
-## Multiple workspaces
-
-Register named workspaces, then select a default:
-
-```bash
-nero init ~/work/research-notes
-nero workspace add research ~/work/research-notes
-nero workspace add personal ~/notes
-nero workspace use research
+nero home
+nero workspace create personal
+nero workspace create research
 nero workspace list
+nero workspace use personal
 ```
 
-Use `nero workspace use personal` to switch the saved default. `nero workspace show` prints the workspace selected for the current command, and `nero workspace remove research` removes a registered name without deleting any files. `nero workspace clear` clears the saved default; it does not remove registered entries or delete notes.
-
-## One-command override
-
-`-w` and `--workspace` accept either a registered name or a filesystem path:
+The first created workspace becomes the default if one has not already been set. You can run Nero from any directory once a default workspace is selected:
 
 ```bash
-nero -w personal list
-nero --workspace ~/notes tui
-nero find "equation" --workspace research
+cd ~/Downloads
+nero new "An idea"
+nero find "Fourier"
+nero today
+nero tui
+nero gui
 ```
 
-The override applies only to that command; it does not change your saved default.
+Use `-w` or `--workspace` for a one-command override:
 
-## Selection precedence
+```bash
+nero -w research list
+nero --workspace personal tui
+```
+
+## Application home versus workspace container
+
+`nero home` prints the paths for the application home, config file, keys, workspace container, and default backup destination. `nero home path` prints only the app-home path.
+
+The workspace container defaults to `$NERO_HOME/workspaces`. To change only where new named workspace directories are created:
+
+```bash
+nero workspace home
+nero workspace home set ~/Documents/nero-workspaces
+nero workspace create personal
+nero workspace home reset
+```
+
+Resetting the workspace container does not move or delete existing workspaces. Registered workspaces keep their existing paths until you move them yourself and update the registration.
+
+## Choose a different application home
+
+Set `NERO_HOME` to an **absolute path** before running Nero. This relocates the config, workspace container, key directory, and default backup destination together.
+
+Fish (persistent for future terminals):
+
+```fish
+set -Ux NERO_HOME "$HOME/.local/share/nero"
+nero home
+```
+
+Bash/Zsh (put the export in your shell startup file to persist it):
+
+```bash
+export NERO_HOME="$HOME/.local/share/nero"
+nero home
+```
+
+To return to the default in Fish, remove the universal variable with `set -eU NERO_HOME`. In Bash/Zsh, remove the export from your shell startup file and open a new shell.
+
+A different `NERO_HOME` is a different Nero profile. Nero will not move your existing workspace folders or registry automatically. Register an existing workspace in the new profile with `nero workspace add <name> <path>`, then select it with `nero workspace use <name>`. This avoids accidentally moving notes or changing paths behind your back.
+
+## Move an existing workspace
+
+Nero does not automatically move workspace directories. To move one into the default workspace container, close Nero first, then move the complete workspace—including its `.nero/` metadata and `.git/` directory if present—and register the new path:
+
+```bash
+mkdir -p ~/.nero/workspaces
+mv ~/notes ~/.nero/workspaces/personal
+nero workspace add personal ~/.nero/workspaces/personal
+nero workspace use personal
+```
+
+Check `nero list`, `nero find`, and `nero doctor` before deleting any separate copy. If the name already exists in the registry, use `nero workspace remove <name>` first, then re-register it at the new path.
+
+## Workspace selection precedence
 
 Nero chooses a workspace in this order:
 
 1. Explicit `--workspace PATH_OR_NAME` or `-w PATH_OR_NAME`.
-2. `NERO_WORKSPACE`, useful for scripts and launching the GUI.
-3. Discovery from the current directory, walking up its parents until a `.nero/` workspace marker is found.
-4. The saved default from `nero workspace set` or `nero workspace use`, used when the current directory is not already inside a workspace.
+2. `NERO_WORKSPACE`, useful for scripts and direct GUI startup.
+3. Discovery from the current directory and its ancestors.
+4. The saved default workspace, used when running elsewhere.
 
-This order lets scripts override the interactive default without silently changing it.
+## Configuration
 
-## Configuration location
+The default config is `~/.nero/config.json` (or `%USERPROFILE%\.nero\config.json` on Windows). It stores workspace names and paths, not note contents or cloud credentials. `NERO_HOME` selects the whole application home. `NERO_CONFIG_HOME` changes only the config location, and `NERO_CONFIG_DIR` changes only the backup-key directory; those two are advanced/testing overrides.
 
-Nero stores the preference file outside every workspace:
-
-- Linux/BSD: `$XDG_CONFIG_HOME/nero/config.json`, or `~/.config/nero/config.json` when `XDG_CONFIG_HOME` is unset.
-- macOS: `~/Library/Application Support/Nero/config.json`.
-- Windows: `%APPDATA%\Nero\config.json`.
-- `NERO_CONFIG_HOME` can override the application config directory on any platform.
-
-The config stores paths and workspace names, not note contents, cloud credentials, or encryption private keys. Copying the Markdown workspace to another machine does not copy this local preference; set it again there.
+A new Nero profile starts clean. It does not import config/key files from outside the active app home or automatically move existing workspace folders. Register any workspace you want Nero to use with `nero workspace add <name> <path>`.

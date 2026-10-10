@@ -2,7 +2,7 @@ use std::{env, io::{self, Write}, path::PathBuf, process::{exit, Command as Proc
 
 mod config;
 
-use nero_core::{NoteSummary, Result, SearchResult, Workspace};
+use nero_core::{is_workspace_root, nero_home_dir, NoteSummary, Result, SearchResult, Workspace};
 
 fn main() {
     if let Err(error) = run() {
@@ -22,6 +22,23 @@ fn run() -> Result<()> {
     match command.as_str() {
         "help" | "--help" | "-h" => print_help(),
         "version" | "--version" => println!("nero {}", env!("CARGO_PKG_VERSION")),
+        "home" | "app-home" => {
+            let subcommand = args.next();
+            let home = nero_home_dir()?;
+            match subcommand.as_deref() {
+                None | Some("show") => {
+                    println!("Nero home:  {}", home.display());
+                    println!("Config:     {}", config::config_path()?.display());
+                    println!("Workspaces: {}", config::workspace_home()?.display());
+                    println!("Keys:       {}", Workspace::config_dir()?.display());
+                    println!("Backups:    {}", home.join("backups").display());
+                    println!("Override with the NERO_HOME environment variable.");
+                }
+                Some("path") => println!("{}", home.display()),
+                Some("help") | Some("--help") | Some("-h") => println!("home [show|path] — show Nero's application home and data directories; override with NERO_HOME"),
+                Some(other) => return Err(nero_core::NeroError::Message(format!("unknown home command `{other}`; use show or path"))),
+            }
+        }
         "init" => {
             let root = args.next().map(PathBuf::from)
                 .or_else(|| workspace_override.clone().map(PathBuf::from))
@@ -64,7 +81,16 @@ fn run() -> Result<()> {
         }
         "today" => {
             let workspace = selected_workspace(workspace_override.as_deref())?;
+            // Keep the daily-note path as the first line for scripts, then show actionable due notes.
             println!("{}", workspace.today()?.path.display());
+            let due_notes = workspace.due_notes()?;
+            if !due_notes.is_empty() {
+                println!("\nDue notes:");
+                for item in due_notes {
+                    let status = if item.overdue { "overdue" } else { "due today" };
+                    println!("  [{status}] {} ({}, due {})", item.summary.title, item.summary.path.display(), item.due_date);
+                }
+            }
         }
         "render" => {
             let query = join_args(args)?;
@@ -89,13 +115,56 @@ fn run() -> Result<()> {
             let subcommand = args.next().unwrap_or_else(|| "help".into());
             let values = args.collect::<Vec<_>>();
             match subcommand.as_str() {
+                "home" => {
+                    let action = values.first().map(String::as_str).unwrap_or("help");
+                    let positional = values.iter().skip(1).cloned().collect::<Vec<_>>();
+                    match action {
+                        "create" => {
+                            if positional.len() > 1 {
+                                return Err(nero_core::NeroError::Message("usage: nero backup home create [archive.zip.age]".into()));
+                            }
+                            let destination = if let Some(path) = positional.first() {
+                                PathBuf::from(path)
+                            } else {
+                                nero_home_dir()?.join("backups").join(format!("nero-home-backup-{}.zip.age", backup_timestamp()))
+                            };
+                            let passphrase = prompt_home_backup_passphrase(true)?;
+                            let (path, manifest) = Workspace::create_home_backup(nero_home_dir()?, destination, passphrase)?;
+                            println!("created encrypted Nero home backup: {} ({} files, {} bytes before compression)", path.display(), manifest.files.len(), manifest.stats().bytes);
+                            println!("keep the passphrase somewhere safe; it cannot be recovered by Nero");
+                        }
+                        "verify" => {
+                            let archive = positional.first().ok_or_else(|| nero_core::NeroError::Message("usage: nero backup home verify <archive.zip.age>".into()))?;
+                            let passphrase = prompt_home_backup_passphrase(false)?;
+                            let stats = Workspace::verify_home_backup(archive, passphrase)?;
+                            println!("home backup verified: {} files, {} bytes before compression", stats.files, stats.bytes);
+                        }
+                        "restore" => {
+                            let archive = positional.first().ok_or_else(|| nero_core::NeroError::Message("usage: nero backup home restore <archive.zip.age> [destination]".into()))?;
+                            let destination = positional.get(1).map(PathBuf::from).unwrap_or(nero_home_dir()?);
+                            let passphrase = prompt_home_backup_passphrase(false)?;
+                            let stats = Workspace::restore_home_backup(archive, destination.clone(), passphrase)?;
+                            println!("Nero home restored to {} ({} files, {} bytes before path rebasing)", destination.display(), stats.files, stats.bytes);
+                            println!("run `nero home` and `nero workspace list` to check the restored profile");
+                        }
+                        "recovery-test" | "test" => {
+                            let archive = positional.first().ok_or_else(|| nero_core::NeroError::Message("usage: nero backup home recovery-test <archive.zip.age>".into()))?;
+                            let passphrase = prompt_home_backup_passphrase(false)?;
+                            let stats = Workspace::recovery_test_home_backup(archive, passphrase)?;
+                            println!("Nero home backup recovery test passed: {} files, {} bytes", stats.files, stats.bytes);
+                        }
+                        _ => println!("home backup commands: create [archive.zip.age], verify <archive.zip.age>, restore <archive.zip.age> [destination], recovery-test <archive.zip.age>"),
+                    }
+                }
                 "create" => {
                     let workspace = selected_workspace(workspace_override.as_deref())?;
                     let (encrypt, identity, positional) = parse_backup_flags(values)?;
                     let default_extension = if encrypt { "age" } else { "zip" };
-                    let destination = positional.first().map(PathBuf::from).unwrap_or_else(|| {
-                        workspace.root().parent().unwrap_or(workspace.root()).join(format!("nero-backup-{}.{}", backup_timestamp(), default_extension))
-                    });
+                    let destination = if let Some(path) = positional.first() {
+                        PathBuf::from(path)
+                    } else {
+                        nero_home_dir()?.join("backups").join(format!("nero-backup-{}.{}", backup_timestamp(), default_extension))
+                    };
                     let (path, manifest) = if encrypt {
                         let identity = identity.unwrap_or(Workspace::identity_path()?);
                         workspace.create_encrypted_backup_with_identity(destination, identity)?
@@ -386,7 +455,7 @@ fn selected_workspace(explicit: Option<&str>) -> Result<Workspace> {
 
     let cwd = env::current_dir()?;
     for candidate in cwd.ancestors() {
-        if candidate.join(".nero").is_dir() || candidate.join(".note").is_dir() {
+        if is_workspace_root(candidate) {
             return open_workspace(candidate.to_path_buf());
         }
     }
@@ -402,7 +471,7 @@ fn open_selected_workspace(target: &str) -> Result<Workspace> {
 
 fn open_workspace(path: PathBuf) -> Result<Workspace> {
     let workspace = Workspace::open(path)?;
-    if !workspace.metadata_dir().is_dir() && !workspace.root().join(".note").is_dir() {
+    if !is_workspace_root(workspace.root()) {
         return Err(nero_core::NeroError::Message(format!(
             "{} is not an initialized Nero workspace; run `nero init {}` first",
             workspace.root().display(), workspace.root().display()
@@ -417,6 +486,25 @@ fn handle_workspace_command(
 ) -> Result<()> {
     let subcommand = args.next().unwrap_or_else(|| "show".to_owned());
     match subcommand.as_str() {
+        "home" => match args.next().as_deref() {
+            None | Some("show") => println!("workspace home: {}", config::workspace_home()?.display()),
+            Some("set") => {
+                let path = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace home set <parent-directory>".into()))?;
+                let path = config::set_workspace_home(PathBuf::from(path))?;
+                println!("workspace home: {}", path.display());
+            }
+            Some("reset") => println!("workspace home: {}", config::reset_workspace_home()?.display()),
+            Some(other) => return Err(nero_core::NeroError::Message(format!("unknown workspace home command `{other}`; use show, set, or reset"))),
+        },
+        "create" => {
+            let name = args.next().ok_or_else(|| nero_core::NeroError::Message("usage: nero workspace create <name>".into()))?;
+            let path = config::create_workspace(&name)?;
+            println!("created workspace `{name}` at {}", path.display());
+            let view = config::view()?;
+            if view.default_workspace_name.as_deref() == Some(name.as_str()) {
+                println!("selected as the default workspace");
+            }
+        }
         "set" | "default" => {
             let path = args.next().ok_or_else(|| {
                 nero_core::NeroError::Message("usage: nero workspace set <initialized-workspace-path>".into())
@@ -438,8 +526,9 @@ fn handle_workspace_command(
         }
         "list" | "ls" => {
             let view = config::view()?;
+            println!("workspace home: {}", view.workspace_home_path.display());
             if view.workspaces.is_empty() && view.default_workspace_path.is_none() {
-                println!("No workspaces configured yet. Use `nero workspace set ~/notes` or `nero workspace add <name> <path>`.");
+                println!("No workspaces configured yet. Use `nero workspace create personal` or `nero workspace add <name> <path>`.");
                 return Ok(());
             }
             let default_named = view.default_workspace_name.as_deref();
@@ -465,7 +554,7 @@ fn handle_workspace_command(
             println!("default workspace cleared; Nero will use NERO_WORKSPACE or discover from the current directory");
         }
         "help" | "--help" | "-h" => {
-            println!("workspace commands:\n  set <path>       set the default workspace path\n  add <name> <path> register a named workspace\n  use <name>       make a named workspace the default\n  list             list registered workspaces\n  show             print the workspace selected for this command\n  remove <name>    remove a named workspace\n  clear            clear the saved default")
+            println!("workspace commands:\n  home [set <path>|reset] show/set the parent directory for workspaces\n  create <name>    create a workspace under the workspace home\n  set <path>       set the default to an initialized workspace path\n  add <name> <path> register an existing workspace\n  use <name>       make a named workspace the default\n  list             list registered workspaces\n  show             print the workspace selected for this command\n  remove <name>    remove a registered workspace\n  clear            clear the saved default")
         }
         other => return Err(nero_core::NeroError::Message(format!("unknown workspace command `{other}`; run `nero workspace help`"))),
     }
@@ -539,6 +628,25 @@ fn parse_storage_flags(values: Vec<String>) -> Result<(bool, Vec<String>)> {
     Ok((encrypt, positional))
 }
 
+fn prompt_home_backup_passphrase(confirm: bool) -> Result<String> {
+    let passphrase = rpassword::prompt_password("Home backup passphrase: ")
+        .map_err(|error| nero_core::NeroError::Message(format!("could not read passphrase: {error}")))?;
+    if passphrase.is_empty() {
+        return Err(nero_core::NeroError::Message("passphrase cannot be empty".into()));
+    }
+    if confirm {
+        if passphrase.chars().count() < 12 {
+            return Err(nero_core::NeroError::Message("use a home-backup passphrase of at least 12 characters".into()));
+        }
+        let confirmation = rpassword::prompt_password("Confirm passphrase: ")
+            .map_err(|error| nero_core::NeroError::Message(format!("could not read passphrase confirmation: {error}")))?;
+        if passphrase != confirmation {
+            return Err(nero_core::NeroError::Message("passphrases do not match; backup was not created".into()));
+        }
+    }
+    Ok(passphrase)
+}
+
 fn backup_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -548,16 +656,26 @@ fn backup_timestamp() -> String {
 }
 
 fn print_help() {
-    println!(r#"Nero — a small place for your thoughts.
+    println!(r#"Nero — Markdown notes, search, links, and math across CLI, terminal, and desktop.
 
 USAGE
   nero [--workspace PATH|NAME] <command> [arguments]
   nero -w PATH|NAME <command> [arguments]
 
+APPLICATION HOME
+  home                    Show Nero's application home and data directories
+  home path               Print the application home path (default ~/.nero)
+
 WORKSPACES
-  workspace set <path>    Set the default workspace for all directories
+  workspace home          Show the parent directory for workspaces (default ~/.nero/workspaces)
+  workspace home set <path>
+                          Choose a different parent directory
+  workspace home reset   Return to $NERO_HOME/workspaces
+  workspace create <name>
+                          Create and register a workspace under that directory
+  workspace set <path>    Set the default to an initialized workspace
   workspace add <name> <path>
-                          Register a named workspace
+                          Register an existing workspace
   workspace use <name>    Make a named workspace the default
   workspace list          List registered workspaces
   workspace show          Show the workspace currently selected
@@ -573,14 +691,22 @@ COMMANDS
   edit <note>             Open a note in $EDITOR
   find <query>            Search notes
   backlinks <note>        Find notes linking to a note
-  today                   Create/open today's daily note
+  today                   Open today's daily note and list due/overdue notes
   render <note>           Render a note to HTML
   reindex                 Rebuild/update the search index
   watch                   Watch Markdown files and refresh the index
   doctor                  Check workspace health
   backup create [path]    Create a portable local backup
   backup create --encrypt [path]
-                          Create an age-encrypted backup
+                          Create an age-encrypted workspace backup
+  backup home create [path.zip.age]
+                          Create a passphrase-encrypted full-home backup
+  backup home verify <path.zip.age>
+                          Verify a full-home backup
+  backup home restore <path.zip.age> [destination]
+                          Restore the whole Nero home on this/new machine
+  backup home recovery-test <path.zip.age>
+                          Test a full-home backup without replacing anything
   backup inspect <file>   Inspect an unencrypted Nero backup manifest
   backup verify <file>    Verify a ZIP or decrypt+verify an age backup
   backup restore <file> <dir>
@@ -611,7 +737,11 @@ COMMANDS
 
 WORKSPACE SELECTION
   --workspace PATH|NAME (or -w) overrides the selected workspace for one command.
-  Otherwise Nero uses NERO_WORKSPACE, a saved default, then directory discovery.
+  Otherwise Nero uses NERO_WORKSPACE, directory discovery, then the saved default.
+  New named workspaces are created under $NERO_HOME/workspaces (default ~/.nero/workspaces).
+  Config, backup keys, named workspaces, and local backups live beneath $NERO_HOME.
+  Set NERO_HOME to an absolute path to relocate Nero's entire application home.
+  `backup home create` encrypts the complete app home with a separate passphrase.
 
 NOTES
   Notes are ordinary Markdown files.

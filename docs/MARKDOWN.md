@@ -46,10 +46,11 @@ A small YAML-like frontmatter block can be used for lightweight metadata:
 ---
 tags: math, dsp
 status: reading
+due: 2026-10-12
 ---
 ```
 
-Nero extracts simple `key: value` pairs. It does not attempt to become a general YAML database.
+Nero extracts simple `key: value` pairs. `due: YYYY-MM-DD` makes the note appear in `nero today` on that date and thereafter until you change/remove the field. No background process is required. It does not attempt to become a general YAML database.
 
 ## Tasks
 

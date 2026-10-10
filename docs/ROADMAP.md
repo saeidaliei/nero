@@ -117,10 +117,10 @@ The 1.0 foundation is treated as stable. This pass locks down filesystem boundar
 
 ## Next usability work
 - [x] Persistent default workspace so commands work from any directory
-- [x] Named workspaces and one-command `-w`/`--workspace` override
-- [ ] One-shot reminders stored as ordinary Markdown notes
-- [ ] Local desktop notifications and documented user-service setup
-- [ ] Optional external notification adapter (for example Telegram), with explicit opt-in and secrets outside note files
+- [x] Shared workspace home with named workspace creation beneath it
+- [x] One-command `-w`/`--workspace` override
+- [x] `due: YYYY-MM-DD` frontmatter surfaced by `nero today`
+- [ ] Improve `doctor` feedback for malformed optional metadata
 
 ## Later, only if needed
 - [ ] export to HTML/PDF
