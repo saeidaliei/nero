@@ -850,19 +850,43 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
 }
 
 fn is_inside_workspace(candidate: &Path, workspace: &Path) -> bool {
-    let workspace = fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
-    // The destination usually does not exist yet, so canonicalizing it directly
-    // fails. Canonicalize its existing parent instead to resolve `..` and
-    // symlinks before checking containment (important for the smoke-test paths).
-    let candidate = fs::canonicalize(candidate).unwrap_or_else(|_| {
-        match (candidate.parent(), candidate.file_name()) {
-            (Some(parent), Some(file_name)) => fs::canonicalize(parent)
-                .map(|parent| parent.join(file_name))
-                .unwrap_or_else(|_| candidate.to_path_buf()),
-            _ => candidate.to_path_buf(),
-        }
-    });
+    // Backup destinations usually do not exist yet. Resolve the deepest existing
+    // ancestor and append every missing path component, rather than trying only
+    // the immediate parent (which also may not exist). Canonicalizing that
+    // ancestor handles symlinks such as macOS's /tmp -> /private/tmp alias and
+    // Windows path aliases; appending the tail preserves containment checks for
+    // paths like `<workspace>/nested/backup.zip` when `nested` is not created.
+    let Some(workspace) = canonicalize_path_with_missing_tail(workspace) else {
+        // Fail closed if the workspace path cannot be resolved reliably.
+        return true;
+    };
+    let Some(candidate) = canonicalize_path_with_missing_tail(candidate) else {
+        // Do not risk allowing a destination whose location cannot be resolved.
+        return true;
+    };
     candidate.starts_with(&workspace)
+}
+
+fn canonicalize_path_with_missing_tail(path: &Path) -> Option<PathBuf> {
+    let mut current = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    let mut missing_tail = Vec::new();
+
+    loop {
+        if let Ok(mut resolved) = fs::canonicalize(&current) {
+            for component in missing_tail.iter().rev() {
+                resolved.push(component);
+            }
+            return Some(resolved);
+        }
+
+        let file_name = current.file_name()?.to_os_string();
+        missing_tail.push(file_name);
+        current = current.parent()?.to_path_buf();
+    }
 }
 
 fn unix_now() -> u64 {
