@@ -200,4 +200,4 @@ The Tauri GUI has its own Cargo manifest and build process; see [GUI](docs/GUI.m
 
 ## Project status
 
-Version **1.0.0**. No account, cloud service, or background daemon is required. Git, rclone, and remote storage are optional. The source of truth is ordinary Markdown; indexes and local caches can be rebuilt.
+No account, cloud service, or background daemon is required. Git, rclone, and remote storage are optional. The source of truth is ordinary Markdown; indexes and local caches can be rebuilt.

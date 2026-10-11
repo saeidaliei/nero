@@ -8,7 +8,6 @@ timeZone = 'Europe/Berlin'
   description = 'Documentation for Nero, a small local-first knowledge system built around plain Markdown.'
   projectURL = 'https://github.com/saeidaliei/nero'
   docsSource = 'https://github.com/saeidaliei/nero/tree/main/docs'
-  version = '1.0.0'
 
 [markup]
   [markup.goldmark]

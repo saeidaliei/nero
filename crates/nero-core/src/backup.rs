@@ -850,10 +850,19 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
 }
 
 fn is_inside_workspace(candidate: &Path, workspace: &Path) -> bool {
-    let candidate = candidate
-        .canonicalize()
-        .unwrap_or_else(|_| candidate.to_path_buf());
-    candidate.starts_with(workspace)
+    let workspace = fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    // The destination usually does not exist yet, so canonicalizing it directly
+    // fails. Canonicalize its existing parent instead to resolve `..` and
+    // symlinks before checking containment (important for the smoke-test paths).
+    let candidate = fs::canonicalize(candidate).unwrap_or_else(|_| {
+        match (candidate.parent(), candidate.file_name()) {
+            (Some(parent), Some(file_name)) => fs::canonicalize(parent)
+                .map(|parent| parent.join(file_name))
+                .unwrap_or_else(|_| candidate.to_path_buf()),
+            _ => candidate.to_path_buf(),
+        }
+    });
+    candidate.starts_with(&workspace)
 }
 
 fn unix_now() -> u64 {
@@ -1012,18 +1021,44 @@ mod home_backup_tests {
         assert!(!restored.join("backups").exists());
         let restored_config: serde_json::Value =
             serde_json::from_slice(&fs::read(restored.join("config.json")).unwrap()).unwrap();
-        let restored_workspace_path = restored
-            .join("workspaces/personal")
-            .to_string_lossy()
-            .into_owned();
+        let restored_workspace_path =
+            fs::canonicalize(restored.join("workspaces/personal")).unwrap();
+        let configured_workspace_path = PathBuf::from(
+            restored_config["workspaces"]["personal"]
+                .as_str()
+                .expect("restored workspace path is a string"),
+        );
         assert_eq!(
-            restored_config["workspaces"]["personal"].as_str(),
-            Some(restored_workspace_path.as_str())
+            fs::canonicalize(configured_workspace_path).unwrap(),
+            restored_workspace_path
         );
 
         let _ = fs::remove_file(archive);
         let _ = fs::remove_dir_all(source);
         let _ = fs::remove_dir_all(restored);
+    }
+
+    #[test]
+    fn workspace_backup_destination_with_parent_traversal_is_allowed_outside_workspace() {
+        let root = temporary("backup-path-containment");
+        fs::create_dir_all(&root).unwrap();
+        let workspace = Workspace::init(&root).unwrap();
+        let outside = root.join("..").join(format!(
+            "nero-backup-containment-{}.zip",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&outside);
+
+        let (created, _) = workspace.create_backup(&outside).unwrap();
+        assert!(created.is_file());
+        assert!(
+            workspace
+                .create_backup(root.join("nested").join("backup.zip"))
+                .is_err()
+        );
+
+        let _ = fs::remove_file(created);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

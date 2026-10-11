@@ -2,6 +2,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="{{ .Description | default .Site.Params.description }}">
 <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <title>{{ if .IsHome }}Nero{{ else }}{{ .Title }} · Nero{{ end }}</title>
 {{ $styles := resources.Get "css/nero.css" | minify | fingerprint }}
 <link
@@ -10,9 +13,6 @@
   integrity="{{ $styles.Data.Integrity }}"
   crossorigin="anonymous"
 >
-<script>
-  document.documentElement.dataset.theme = localStorage.getItem('nero-theme') || 'system';
-</script>
 <script>
   window.MathJax = {
     tex: {

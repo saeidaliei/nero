@@ -1,15 +1,17 @@
 # Changelog
 
-## 1.0.0 maintenance updates
+## Maintenance updates
 
 - Centralized user-level state under `~/.nero` by default: config, backup keys, local backups, and the `workspaces/` container.
 - Added `NERO_HOME` as an absolute-path override for relocating the complete application home and `nero home [show|path]` for inspecting active paths.
 - Reserved `~/.nero` as an application-home directory rather than letting workspace discovery mistake its parent for a workspace.
-- Kept the version at 1.0.0 as requested.
+- New notes now get `title` and `date` frontmatter automatically; new daily notes also get `type: daily`. Added research, task, journal, and math examples with metadata.
+- Normalized backup destination checks for paths containing `..` and made the home-restore path assertion compare canonical paths across operating systems.
+- Restyled the docs site with Inter typography, a plain white page, a narrower header, and no displayed package-version badge.
 - Added passphrase-encrypted full-home backups (`nero backup home create/verify/restore/recovery-test`) for machine-to-machine recovery; config paths are rebased during restore.
 - Added Quick Start instructions for private GitHub version history and rclone-backed Mega backups.
 
-## 1.0.0 maintenance notes
+## Maintenance notes
 
 - Added a configurable workspace home (default `~/.nero/workspaces`) and `nero workspace create <name>` so new workspaces stay organized beneath one parent.
 - Added date-only `due: YYYY-MM-DD` frontmatter surfaced by `nero today`, with overdue items labeled and no separate task database.
@@ -20,7 +22,7 @@
 - Documented the npm-first Tauri CLI setup and added `tauri:dev`, `tauri:build`, and `tauri:info` scripts.
 - Fixed the smoke-test frontmatter writer and pointed encrypted remote-restore coverage at the actual `identity.txt` key path.
 
-## 1.0.0
+## Initial release build and test fixes
 
 Build/test fixes applied after the first user Cargo run:
 
@@ -150,7 +152,7 @@ Nero's document engine milestone.
 - Added the first Ratatui TUI reader shell
 - Workspace-local application metadata lives under `.nero/`.
 
-### 1.0.0 build fixes (post-test)
+### Post-test build fixes
 
 - Added the Tauri app icon source and generated PNG/ICO/ICNS variants required by development and desktop bundle builds.
 - Declared the bundle icon set explicitly in `gui/src-tauri/tauri.conf.json`.

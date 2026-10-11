@@ -1,3 +1,11 @@
+---
+title: Fourier Transform
+date: 2026-10-10
+tags: math, dsp
+status: reference
+type: concept
+---
+
 # Fourier Transform
 
 The Fourier transform maps a function into its frequency representation.

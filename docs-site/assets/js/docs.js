@@ -6,23 +6,6 @@
   const open = document.getElementById('search-open');
   const closeButton = document.getElementById('search-close-button');
   const closeBackdrop = document.getElementById('search-close');
-  const themeToggle = document.getElementById('theme-toggle');
-
-  function setTheme(next) {
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('nero-theme', next);
-  }
-
-  function effectiveTheme() {
-    const saved = document.documentElement.dataset.theme;
-    if (saved === 'light' || saved === 'dark') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-
-  themeToggle?.addEventListener('click', () => {
-    setTheme(effectiveTheme() === 'dark' ? 'light' : 'dark');
-  });
-
   function score(doc, query) {
     const q = query.trim().toLowerCase();
     if (!q) return 0;

@@ -7,7 +7,7 @@ ALT_WORKSPACE="${TMP}-research"
 USER_CONFIG="${TMP}-user-config"
 WORKSPACE_HOME="${TMP}-workspace-home"
 NERO_HOME_DIR="${TMP}-nero-home"
-trap 'rm -rf "$TMP" "$ALT_WORKSPACE" "$USER_CONFIG" "$WORKSPACE_HOME" "$NERO_HOME_DIR"' EXIT
+trap 'rm -rf "$TMP" "$ALT_WORKSPACE" "$USER_CONFIG" "$WORKSPACE_HOME" "$NERO_HOME_DIR" "${TMP}-restore" "${TMP}-encrypted-restore" "${TMP}-remote-restore" "${TMP}-nero-smoke-backup.zip" "${TMP}-nero-smoke-backup.age"' EXIT
 
 # This script is a shell-level smoke test for the expected CLI UX.
 # It requires a compiled `nero` binary at $NERO_BIN and a working `git` executable.
@@ -24,12 +24,15 @@ fi
 "$NERO_BIN" init "$TMP"
 cd "$TMP"
 "$NERO_BIN" new "Fourier Transform"
+grep -Fxq 'title: Fourier Transform' fourier-transform.md
+grep -Eq '^date: [0-9]{4}-[0-9]{2}-[0-9]{2}$' fourier-transform.md
 mkdir -p math/notes
-printf '# Fourier Transform\n\nSee [[math/Signal Processing|the signal note]].\n' > math/notes/fourier-transform.md
+printf '# Fourier Transform\n\nSee [[Signal Processing|the signal note]].\n' > math/notes/fourier-transform.md
 printf '%s\n' '---' 'title: Signal Processing' '---' > math/Signal.md
 "$NERO_BIN" find fourier-transform
-"$NERO_BIN" backlinks "Signal Processing"
+"$NERO_BIN" backlinks "Signal Processing" | grep -F "math/notes/fourier-transform.md"
 "$NERO_BIN" today
+grep -Eq '^type: daily$' daily/*.md
 "$NERO_BIN" render "math/notes/fourier-transform.md"
 "$NERO_BIN" reindex
 "$NERO_BIN" doctor
@@ -51,7 +54,7 @@ test -f "$ALT_WORKSPACE/research-only-note.md"
 test -f "$ALT_WORKSPACE/default-alias-note.md"
 "$NERO_BIN" workspace set "$TMP"
 cd "$TMP"
-BACKUP="$TMP/../nero-smoke-backup.zip"
+BACKUP="${TMP}-nero-smoke-backup.zip"
 "$NERO_BIN" backup create "$BACKUP"
 "$NERO_BIN" backup verify "$BACKUP"
 RESTORE="$TMP-restore"
@@ -61,7 +64,7 @@ test -f "$RESTORE/math/Signal.md"
 # Encryption + recovery. The identity lives outside the workspace.
 export NERO_CONFIG_DIR="$TMP/config"
 "$NERO_BIN" key generate
-ENCRYPTED="$TMP/../nero-smoke-backup.age"
+ENCRYPTED="${TMP}-nero-smoke-backup.age"
 "$NERO_BIN" backup create --encrypt "$ENCRYPTED"
 cd /tmp
 "$NERO_BIN" backup verify "$ENCRYPTED"
@@ -99,6 +102,9 @@ case "${1:-}" in
   copyto)
     src="$2"
     dst="$3"
+    # Strip the fake remote prefix on either side: uploads have a local source
+    # and remote destination, while downloads have a remote source and local destination.
+    src="${src#fake:}"
     dst="${dst#fake:}"
     mkdir -p "$(dirname "$dst")"
     cp "$src" "$dst"

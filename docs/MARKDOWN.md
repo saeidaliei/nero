@@ -40,17 +40,37 @@ Resolution is deterministic: note-relative path, workspace path, title, then fil
 
 ## Frontmatter
 
-A small YAML-like frontmatter block can be used for lightweight metadata:
+Nero creates new notes with frontmatter by default. `nero new "Fourier Transform"` starts a file like this (the date below is illustrative; Nero writes the current local date):
 
 ```yaml
 ---
-tags: math, dsp
-status: reading
-due: 2026-10-12
+title: Fourier Transform
+date: 2026-10-11
+---
+
+# Fourier Transform
+```
+
+Daily notes created by `nero today` also include `type: daily`. Existing notes are not rewritten automatically; add frontmatter when you want metadata on an older file.
+
+Frontmatter is deliberately lightweight. Nero reads simple `key: value` pairs rather than implementing all of YAML, so use plain scalar values and comma-separated tags:
+
+```yaml
+---
+title: Prepare Project Release
+date: 2026-10-11
+due: 2026-10-16
+tags: project, release
+status: in-progress
+type: task
+priority: high
+project: Nero
 ---
 ```
 
-Nero extracts simple `key: value` pairs. `due: YYYY-MM-DD` makes the note appear in `nero today` on that date and thereafter until you change/remove the field. No background process is required. It does not attempt to become a general YAML database.
+Common useful fields include `title` (display title), `date` (creation or note date), `due` (optional due date), `tags`, `status`, `type`, `priority`, `project`, `author`, `source`, and `aliases`. Apart from `title` and `due`, these are user-defined conventions: Nero preserves/exposes the key-value metadata but does not impose a schema or special behavior on them. `due: YYYY-MM-DD` makes the note appear in `nero today` on that date and thereafter until you change/remove the field. No background process is required. Due dates are optional; don't add one to notes that have no deadline.
+
+See the complete [examples directory on GitHub](https://github.com/saeidaliei/nero/tree/main/examples) for research, project-task, daily-log, and math-note patterns.
 
 ## Tasks
 

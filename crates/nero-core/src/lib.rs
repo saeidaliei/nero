@@ -239,7 +239,10 @@ impl Workspace {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        atomic_write(&path, format!("# {clean_title}\n\n").as_bytes())?;
+        let created_date = chrono_like_date();
+        let source =
+            format!("---\ntitle: {clean_title}\ndate: {created_date}\n---\n\n# {clean_title}\n\n");
+        atomic_write(&path, source.as_bytes())?;
         Ok(NoteSummary {
             path: self.relative_path(&path),
             title: clean_title.to_owned(),
@@ -482,7 +485,9 @@ impl Workspace {
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 fs::create_dir_all(absolute.parent().expect("daily has a parent"))?;
-                atomic_write(&absolute, format!("# {now}\n\n").as_bytes())?;
+                let source =
+                    format!("---\ntitle: {now}\ndate: {now}\ntype: daily\n---\n\n# {now}\n\n");
+                atomic_write(&absolute, source.as_bytes())?;
             }
             Err(error) => return Err(error.into()),
         }
@@ -1113,6 +1118,48 @@ mod tests {
         let results = workspace.search("frequency").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].note.title, "Fourier Transform");
+    }
+
+    #[test]
+    fn new_notes_include_title_and_creation_date_frontmatter() {
+        let root = temp_workspace("new-note-frontmatter");
+        let workspace = Workspace::init(&root).unwrap();
+        let note = workspace.create_note("Frontmatter Example").unwrap();
+        let source = fs::read_to_string(root.join(&note.path)).unwrap();
+        let document = Document::parse(&source);
+
+        assert!(source.starts_with("---\ntitle: Frontmatter Example\ndate: "));
+        assert_eq!(
+            document.frontmatter.get("title").map(String::as_str),
+            Some("Frontmatter Example")
+        );
+        let created_date = document.frontmatter.get("date").unwrap();
+        assert!(chrono::NaiveDate::parse_from_str(created_date, "%Y-%m-%d").is_ok());
+        assert!(source.contains("\n# Frontmatter Example\n"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn daily_notes_include_date_and_daily_type_frontmatter() {
+        let root = temp_workspace("daily-note-frontmatter");
+        let workspace = Workspace::init(&root).unwrap();
+        let note = workspace.today().unwrap();
+        let source = fs::read_to_string(root.join(&note.path)).unwrap();
+        let document = Document::parse(&source);
+
+        assert_eq!(
+            document.frontmatter.get("title").map(String::as_str),
+            Some(note.title.as_str())
+        );
+        assert_eq!(
+            document.frontmatter.get("date").map(String::as_str),
+            Some(note.title.as_str())
+        );
+        assert_eq!(
+            document.frontmatter.get("type").map(String::as_str),
+            Some("daily")
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

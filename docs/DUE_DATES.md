@@ -4,7 +4,7 @@ Due dates are plain Markdown frontmatter. The date is read directly from the Mar
 
 ## Add a due date
 
-Add `due: YYYY-MM-DD` to a note's frontmatter:
+Add `due: YYYY-MM-DD` to a note's frontmatter. Notes created with `nero new` already have `title` and `date`; due dates remain optional:
 
 ```markdown
 ---

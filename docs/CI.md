@@ -14,7 +14,7 @@ The workflow uses current major GitHub Actions for checkout/setup-node; the upst
 
 ## Releases
 
-Release automation lives in `.github/workflows/release.yml`. A tag such as `v1.0.0` starts a version check, builds the CLI and Tauri desktop bundles for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64, creates SHA-256 checksums, and publishes a GitHub Release.
+Release automation lives in `.github/workflows/release.yml`. A semantic-version tag such as `vX.Y.Z` starts a version check, builds the CLI and Tauri desktop bundles for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64, creates SHA-256 checksums, and publishes a GitHub Release.
 
 The macOS CI build uses Tauri's ad-hoc signing identity only when no Apple certificate is configured. Proper Developer ID signing and notarization can be added later without changing the release artifact flow.
 
