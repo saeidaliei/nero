@@ -190,7 +190,12 @@ The documentation site is built from these Markdown files and deployed to [saeid
 ## Development
 
 ```bash
+cargo fmt --all
+cargo fmt --manifest-path gui/src-tauri/Cargo.toml
+
 cargo fmt --all -- --check
+cargo fmt --manifest-path gui/src-tauri/Cargo.toml -- --check
+
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 cargo build --workspace --release
