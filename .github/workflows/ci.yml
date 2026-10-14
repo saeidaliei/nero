@@ -83,6 +83,10 @@ jobs:
         working-directory: gui
         run: npx tsc --noEmit
 
+      - name: Test metadata rendering
+        working-directory: gui
+        run: npm test
+
       - name: Build frontend
         working-directory: gui
         run: npm run build

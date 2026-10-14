@@ -16,7 +16,7 @@
     <script>
       window.NERO_DOCS = [
         {{- range (where .Site.AllPages "Section" "docs") }}
-        {{ dict "title" .Title "permalink" .RelPermalink "summary" (.Summary | plainify) | jsonify }},
+        {{ dict "title" .Title "permalink" .RelPermalink "summary" (.Summary | plainify) "content" (.Plain | plainify) | jsonify }},
         {{- end }}
       ];
     </script>

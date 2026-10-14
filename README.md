@@ -1,21 +1,56 @@
 # Nero
 
-Nero is a local-first Markdown knowledge tool with a CLI, keyboard-driven terminal UI, and desktop GUI. It focuses on quick capture, search, wiki links, readable documents, and mathematical notation—without requiring a cloud account or proprietary note format.
+**Simple but powerful personal notes.** Nero is a local-first Markdown app with a command-line interface (CLI), a keyboard-driven terminal interface (TUI), and a desktop GUI. Your notes stay as ordinary Markdown files on your machine; no account or cloud service is required.
+
+> **Want the desktop app?** Start with [Install the GUI](#desktop-gui). If no installer is attached to the latest release for your operating system, use [Build the GUI from source](#build-the-gui-from-source).
+
+## Table of contents
+
+- [Features](#features)
+- [Install Nero](#install-nero)
+  - [Desktop GUI](#desktop-gui)
+  - [CLI and terminal UI](#cli-and-terminal-ui)
+  - [Build the GUI from source](#build-the-gui-from-source)
+- [Quick start](#quick-start)
+- [Everyday commands](#everyday-commands)
+- [Markdown and metadata](#markdown-and-metadata)
+- [Where your data lives](#where-your-data-lives)
+- [Backups and synchronization](#backups-and-synchronization)
+- [Documentation](#documentation)
+- [Development and tests](#development-and-tests)
+- [Status and license](#status-and-license)
 
 ## Features
 
-- **Plain Markdown** — notes are normal files with frontmatter, tasks, code blocks, images, and LaTeX-style mathematics.
-- **Linked notes** — `[[Wiki Links]]`, labels, backlinks, and heading fragments.
-- **Fast search** — ranked full-text search backed by a rebuildable SQLite FTS5 index.
-- **Three interfaces** — CLI, Ratatui TUI, and Tauri desktop GUI use the same Rust core.
-- **Your editor** — CLI and TUI can open notes with `$EDITOR`; the GUI includes an embedded Markdown editor.
-- **Due dates** — `due: YYYY-MM-DD` frontmatter appears in `nero today` when due or overdue.
-- **Portable data** — notes live on disk as Markdown; SQLite is only a cache.
-- **Versioning and backups** — Git helpers, workspace snapshots, passphrase-encrypted full-home backups, and optional remote storage through rclone.
+- **Plain Markdown files** with frontmatter, tasks, images, code blocks, and math.
+- **Linked notes** using `[[Wiki Links]]`, backlinks, aliases, and heading fragments.
+- **Full-text search** with a rebuildable local SQLite index.
+- **Three interfaces:** CLI, terminal UI, and desktop GUI share the same Rust core.
+- **Daily notes and due dates** without a separate task database.
+- **Portable workflows** with Git versioning, local backups, encryption, and optional `rclone` remotes.
 
-## Installation
+## Install Nero
 
-Requirements: Git and Rust 1.90, pinned in `rust-toolchain.toml`.
+Choose the interface you want. The CLI/TUI and desktop GUI are packaged separately; installing one does not automatically install the other.
+
+### Desktop GUI
+
+1. Open [Nero Releases](https://github.com/saeidaliei/nero/releases/latest).
+2. Download the **`nero-gui-...`** archive for your operating system, if one is attached to the release. Use the Linux, Windows, or macOS build that matches your machine.
+3. Extract the archive and install or open the platform bundle inside it:
+   - **Linux:** install an included `.deb` with `sudo apt install ./name.deb`, install an `.rpm` with `sudo dnf install ./name.rpm`, or make an AppImage executable (`chmod +x name.AppImage`) and run it. The archive may not contain every format.
+   - **Windows:** run the included `.msi` or `.exe` installer.
+   - **macOS:** open the included `.dmg` and move Nero to Applications, or open the provided app bundle.
+
+**If the release only contains “Source code” downloads and no `nero-gui-...` archive, a prebuilt desktop bundle is not available there yet.** In that case, follow [Build the GUI from source](#build-the-gui-from-source).
+
+Once installed, launch Nero from your desktop environment's application menu. The `nero gui` command is a CLI convenience that starts a `nero-gui` executable found on your `PATH`; it works only when that executable is available there.
+
+### CLI and terminal UI
+
+**Requirements:** Git and Rust via [rustup](https://rustup.rs/). The repository pins its Rust toolchain in `rust-toolchain.toml`.
+
+Install Nero's CLI and TUI from the repository:
 
 ```bash
 git clone https://github.com/saeidaliei/nero.git
@@ -23,35 +58,69 @@ cd nero
 cargo install --path crates/nero --force
 ```
 
-Or build without installing:
+Make sure Cargo's binary directory (`~/.cargo/bin`) is on your `PATH`. To build without installing, use:
 
 ```bash
 cargo build --release -p nero
 ./target/release/nero --help
 ```
 
-This installs the CLI and TUI. Build the desktop application separately; see [GUI setup](docs/GUI.md). Prebuilt desktop bundles, when published, are available from GitHub Releases.
+This builds the CLI and TUI, **not the desktop GUI**.
+
+### Build the GUI from source
+
+**Requirements:** Rust via rustup, Node.js 24, npm, and the native Tauri/WebView build dependencies for your operating system. See [GUI setup and platform requirements](docs/GUI.md).
+
+Run these commands from the repository root to build the CLI and create a workspace for the GUI to open:
+
+```bash
+cargo build -p nero
+./target/debug/nero init "$HOME/notes"
+```
+
+Then build and launch the development GUI. The project pins Node.js 24 in `gui/.nvmrc`; if you use nvm, run `nvm use` from `gui/` before installing dependencies. Otherwise, make sure Node.js 24 is active.
+
+```bash
+cd gui
+npm ci
+NERO_WORKSPACE="$HOME/notes" npm run tauri:dev
+```
+
+Tauri compiles the desktop backend, starts the frontend, and opens a desktop window. Keep the terminal open while using the development app; press `Ctrl+C` to stop it.
+
+To build a production bundle instead of running in development mode:
+
+```bash
+npm run tauri:build
+```
+
+Look for the generated platform bundle under `gui/src-tauri/target/release/bundle/`. See [GUI documentation](docs/GUI.md) for details and platform-specific requirements.
 
 ## Quick start
 
-Create a named workspace (under `~/.nero/workspaces/` by default):
+After installing the CLI/TUI, create a workspace and a first note:
 
 ```bash
 nero workspace create personal
 nero workspace use personal
 nero new "Welcome to Nero"
-nero edit "Welcome to Nero"
+nero list
 nero tui
 ```
 
-Nero remembers the default workspace, so you can use it from any directory:
+Open today's note and see notes due today or overdue:
+
+```bash
+nero today
+```
+
+Nero remembers your default workspace, so you can use it from any directory. For example:
 
 ```bash
 cd ~/Downloads
 nero new "An idea"
 nero find "Fourier"
-nero today
-nero gui
+nero backlinks "Welcome to Nero"
 ```
 
 Create another workspace and select it for one command with `-w`:
@@ -63,107 +132,39 @@ nero -w personal list
 nero workspace list
 ```
 
-Nero's application home is `~/.nero`. Set `NERO_HOME` to an absolute path before running Nero if you want to move the entire configuration/workspace home. See [workspace configuration](docs/WORKSPACES.md).
+## Everyday commands
 
-## Quick start: private GitHub repository
+| Command | What it does |
+| --- | --- |
+| `nero new "Title"` | Create a Markdown note with default frontmatter |
+| `nero list` | List notes in the selected workspace |
+| `nero open "Title"` | Print a note |
+| `nero edit "Title"` | Open a note in `$EDITOR` or `$VISUAL` |
+| `nero delete "Title"` / `nero rm "Title"` | Permanently delete a note |
+| `nero find "query"` | Search note content |
+| `nero backlinks "Title"` | Find notes linking to a note |
+| `nero today` | Open today's note and list due/overdue notes |
+| `nero tui` | Open the terminal interface |
+| `nero gui` | Launch `nero-gui`, if it is installed and on `PATH` |
+| `nero reindex` | Rebuild/update the local search index |
+| `nero doctor` | Check workspace health |
+| `nero --help` | Show all commands and options |
 
-For a longer versioning/clone guide, see [Git versioning](docs/GIT.md).
+## Markdown and metadata
 
-Git is for note history, diffs, and versioning. It sends the workspace's Markdown files to your repository; a private GitHub repository is access-controlled, **not client-side encrypted**.
-
-1. [Create a new GitHub repository](https://github.com/new), select **Private**, and name it something like `nero-personal`. Leave it empty—don't add a README, `.gitignore`, or license because the local workspace already exists.
-2. Make sure SSH access to GitHub is configured (`ssh -T git@github.com`).
-3. Initialize/version the workspace and add the repository as its remote:
-
-   ```bash
-   nero -w personal git init
-   nero -w personal git snapshot "Initial notes"
-   nero -w personal git remote add origin git@github.com:YOUR_USERNAME/nero-personal.git
-   git -C "$HOME/.nero/workspaces/personal" push -u origin HEAD
-   ```
-
-4. For later updates, commit a snapshot and push it:
-
-   ```bash
-   nero -w personal git snapshot "Update research notes"
-   nero -w personal git push origin main
-   ```
-
-   If your branch isn't named `main`, replace it with the branch shown by `nero -w personal git status`.
-
-GitHub is a good choice for version history and access across machines. For disaster recovery, also keep a separate encrypted backup.
-
-## Quick start: encrypted backup to MEGA
-
-For an encrypted snapshot of an individual workspace, Nero uses rclone's configured remote. Install [rclone](https://rclone.org/install/) and run `rclone config`; create a remote named `mega` using the Mega backend and verify it with `rclone lsd mega:`. See the [rclone Mega guide](https://rclone.org/mega/) if needed.
-
-Then, with `personal` selected:
-
-```bash
-nero key generate
-nero -w personal storage add mega mega:nero-backups/personal --encrypt
-nero -w personal backup push mega
-nero -w personal backup list mega
-```
-
-The key is created once. Keep its private identity safe—encrypted workspace snapshots need that identity to restore. The configured storage profile contains only the target and encryption setting, not your Mega credentials. Mega and rclone are optional; Nero works without either.
-
-For moving Nero itself to a new machine, use a **full-home backup** instead:
-
-```bash
-nero backup home create
-```
-
-Creation prompts for a passphrase twice and prints the exact archive path. The `.zip.age` archive is passphrase-encrypted independently of the age identity stored inside it, so it can safely contain your notes, configuration, key, and workspaces. It omits prior archives and disposable SQLite indexes. Keep the passphrase separately—Nero cannot recover it.
-
-After configuring the `mega` rclone remote, upload that exact archive. Replace the example filename below with the path Nero printed:
-
-```bash
-ARCHIVE="$HOME/.nero/backups/nero-home-backup-1234567890.zip.age"
-nero backup home verify "$ARCHIVE"
-rclone copyto "$ARCHIVE" "mega:nero-home-backups/$(basename "$ARCHIVE")"
-```
-
-`rclone copyto` copies one file without deleting unrelated remote files ([command reference](https://rclone.org/commands/rclone_copyto/)). You can also copy the archive to an external drive.
-
-On a fresh machine, install Nero and configure the same `mega` rclone remote with `rclone config` (provider credentials are not included in the Nero archive). Then download the archive from Mega (replace the remote filename with the actual one):
-
-```bash
-rclone copyto "mega:nero-home-backups/nero-home-backup-1234567890.zip.age" "$HOME/nero-home-backup.zip.age"
-nero backup home verify "$HOME/nero-home-backup.zip.age"
-nero backup home restore "$HOME/nero-home-backup.zip.age"
-nero workspace list
-nero today
-```
-
-Enter the same passphrase. Restore targets `~/.nero` by default and requires it to be new or empty; it rebases paths for workspaces inside the restored Nero home. Full-home backup refuses to run if a registered workspace is outside `NERO_HOME` or advanced config/key overrides relocate config/keys from their standard locations, so it cannot produce a misleading incomplete snapshot. For a custom destination, pass it as a second argument and set `NERO_HOME` to that location on subsequent runs. See [backup and recovery](docs/BACKUP.md) for scope and limitations.
-
-## Common commands
-
-| Command | Purpose |
-|---|---|
-| `nero new "Title"` | Create a Markdown note |
-| `nero edit "Title"` | Edit a note with `$EDITOR` |
-| `nero list` | List notes |
-| `nero find "query"` | Search notes |
-| `nero backlinks "Title"` | Find incoming links |
-| `nero today` | Open today's note and show due/overdue notes |
-| `nero tui` / `nero gui` | Open the terminal or desktop interface |
-| `nero workspace list` | List named workspaces |
-| `nero home` | Show app-home paths |
-| `nero backup create --encrypt` | Back up the selected workspace |
-| `nero backup home create` | Create a passphrase-encrypted backup of the whole Nero home |
-| `nero doctor` | Check workspace health and links |
-
-Run `nero --help` for the full command list.
-
-## Markdown and mathematics
+Nero stores notes as regular Markdown files. New notes include a `title` and `date`; daily notes also include `type: daily`. Add `due` when a note should appear in `nero today` on or after that date.
 
 ```markdown
 ---
 title: Fourier Transform
-due: 2026-10-15
+date: 2026-10-14
+due: 2026-10-20
+tags: math, signal-processing
+status: in-progress
+type: research
 ---
+
+# Fourier Transform
 
 For a function $f(t)$:
 
@@ -171,38 +172,71 @@ $$
 F(\omega) = \int_{-\infty}^{\infty} f(t)e^{-i\omega t}\,dt
 $$
 
-- [ ] Review the proof
+- [ ] Review the derivation
 
 See also [[Signal Processing]].
 ```
 
-See [Markdown support](docs/MARKDOWN.md) for wiki-link, asset, task, and equation details.
+Frontmatter parsing is intentionally lightweight: Nero supports simple `key: value` lines, not the complete YAML specification. `title` and `due` have built-in behavior; other keys are optional metadata conventions. See [Markdown support](docs/MARKDOWN.md), [Due dates](docs/DUE_DATES.md), and the [examples directory](examples/).
+
+## Where your data lives
+
+- **Workspace:** Markdown notes, assets, and a rebuildable `.nero` search index.
+- **Application home:** `~/.nero` by default, containing configuration, workspace registrations, backup keys, and local backups.
+- **Relocation:** set `NERO_HOME` to an absolute path before running Nero to move the application home.
+
+Your Markdown files are the source of truth; the SQLite index is a cache and can be rebuilt. See [Workspace configuration](docs/WORKSPACES.md) and [Application home](docs/APP_HOME.md).
+
+## Backups and synchronization
+
+Nero works offline. Git and `rclone` are optional additions for version history and off-machine backups:
+
+- [Git versioning](docs/GIT.md) — snapshots, remotes, pushing, and cloning a workspace.
+- [Backups](docs/BACKUP.md) — local ZIP and encrypted workspace backups.
+- [Recovery](docs/RECOVERY.md) — restore notes and your full Nero home on another machine.
+- [Remote storage](docs/STORAGE.md) — use `rclone` targets for remote backups.
+- [Security](docs/SECURITY.md) — encryption, keys, and safety boundaries.
+
+A private Git repository controls who can access its contents but does **not** client-side encrypt your notes. For disaster recovery, keep a separate encrypted backup and protect its passphrase or identity key.
 
 ## Documentation
 
-- [Usage](docs/USAGE.md) · [Workspaces](docs/WORKSPACES.md) · [Application home](docs/APP_HOME.md)
-- [Markdown and math](docs/MARKDOWN.md) · [Due dates](docs/DUE_DATES.md) · [Desktop GUI](docs/GUI.md)
-- [Backups](docs/BACKUP.md) · [Recovery](docs/RECOVERY.md) · [Security](docs/SECURITY.md) · [Remote storage](docs/STORAGE.md)
-- [Architecture](docs/DESIGN.md) · [Development](docs/DEVELOPMENT.md) · [CI](docs/CI.md) · [Changelog](docs/CHANGELOG.md)
+- [Usage guide](docs/USAGE.md) — everyday CLI/TUI usage and commands.
+- [Desktop GUI](docs/GUI.md) — GUI setup, development, and platform notes.
+- [Markdown and math](docs/MARKDOWN.md) — frontmatter, wiki links, tasks, images, and equations.
+- [Workspaces](docs/WORKSPACES.md) · [Application home](docs/APP_HOME.md) · [Due dates](docs/DUE_DATES.md)
+- [Git](docs/GIT.md) · [Backups](docs/BACKUP.md) · [Recovery](docs/RECOVERY.md) · [Storage](docs/STORAGE.md) · [Security](docs/SECURITY.md)
+- [Architecture](docs/DESIGN.md) · [Development](docs/DEVELOPMENT.md) · [CI and releases](docs/CI.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](docs/CHANGELOG.md)
 
-The documentation site is built from these Markdown files and deployed to [saeidaliei.github.io/nero](https://saeidaliei.github.io/nero/) by GitHub Actions.
+The documentation website is published at [saeidaliei.github.io/nero](https://saeidaliei.github.io/nero/).
 
-## Development
+## Development and tests
+
+The repository pins Rust in `rust-toolchain.toml` and Node.js 24 in `gui/.nvmrc`.
+
+Run the Rust checks from the repository root:
 
 ```bash
-cargo fmt --all
-cargo fmt --manifest-path gui/src-tauri/Cargo.toml
-
 cargo fmt --all -- --check
-cargo fmt --manifest-path gui/src-tauri/Cargo.toml -- --check
-
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cargo build --workspace --release
+./tests/smoke.sh
 ```
 
-The Tauri GUI has its own Cargo manifest and build process; see [GUI](docs/GUI.md) and [Development](docs/DEVELOPMENT.md).
+Run GUI checks from `gui/`:
 
-## Project status
+```bash
+npm ci
+npm test
+npx tsc --noEmit
+npm run build
+cargo check --manifest-path src-tauri/Cargo.toml
+```
 
-No account, cloud service, or background daemon is required. Git, rclone, and remote storage are optional. The source of truth is ordinary Markdown; indexes and local caches can be rebuilt.
+For development details and CI behavior, see [Development](docs/DEVELOPMENT.md) and [CI](docs/CI.md).
+
+## Status and license
+
+Nero is under active development. Some installation options depend on platform bundles being published with a release; if in doubt, use the source-build instructions above and check the [roadmap](docs/ROADMAP.md).
+
+Licensed under the [MIT License](LICENSE).

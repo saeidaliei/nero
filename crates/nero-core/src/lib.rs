@@ -280,6 +280,30 @@ impl Workspace {
         Ok(self.read_note(query)?.document.html)
     }
 
+    /// Permanently delete one Markdown note from this workspace.
+    ///
+    /// Resolution and canonical-path checks prevent deleting files through symlinks
+    /// or paths that escape the workspace. The derived index is refreshed by the
+    /// normal search/reindex flow after the source file has been removed.
+    pub fn delete_note(&self, query: &str) -> Result<NoteSummary> {
+        let note = self.read_note(query)?;
+        let absolute = self.root.join(&note.summary.path);
+        let canonical = canonical_workspace_file(&self.root, &absolute)?.ok_or_else(|| {
+            NeroError::Message("note path escapes workspace; refusing to delete".into())
+        })?;
+        if canonical.extension().and_then(|value| value.to_str()) != Some("md") {
+            return Err(NeroError::Message(
+                "only Markdown notes can be deleted".into(),
+            ));
+        }
+
+        fs::remove_file(&canonical)?;
+        Ok(NoteSummary {
+            path: self.relative_path(&canonical),
+            title: note.summary.title,
+        })
+    }
+
     pub fn save_note(&self, query: &str, source: &str) -> Result<Note> {
         let path = self
             .resolve_note(query)?
@@ -1159,6 +1183,24 @@ mod tests {
             document.frontmatter.get("type").map(String::as_str),
             Some("daily")
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn deletes_note_and_search_no_longer_returns_it() {
+        let root = temp_workspace("delete-note");
+        let workspace = Workspace::init(&root).unwrap();
+        let target = workspace.create_note("Delete Target").unwrap();
+        workspace.create_note("Keep Target").unwrap();
+
+        assert_eq!(workspace.search("Delete Target").unwrap().len(), 1);
+        let deleted = workspace.delete_note("Delete Target").unwrap();
+        assert_eq!(deleted.path, target.path);
+        assert_eq!(deleted.title, "Delete Target");
+        assert!(!root.join(&target.path).exists());
+        assert_eq!(workspace.search("Delete Target").unwrap().len(), 0);
+        assert_eq!(workspace.list_notes().unwrap().len(), 1);
+
         let _ = fs::remove_dir_all(root);
     }
 

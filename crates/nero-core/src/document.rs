@@ -203,6 +203,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_common_frontmatter_fields_for_gui_metadata() {
+        let body = concat!(
+            "---\n",
+            "title: Release Plan\n",
+            "date: 2026-10-13\n",
+            "due: 2026-10-20\n",
+            "tags: project, release\n",
+            "status: in-progress\n",
+            "type: task\n",
+            "priority: high\n",
+            "project: Nero\n",
+            "author: Saeid\n",
+            "source: https://example.com/plan\n",
+            "---\n\n",
+            "# Release Plan\n\n",
+            "Review the release checklist.\n",
+        );
+        let document = parse(body);
+
+        assert_eq!(document.title, "Release Plan");
+        assert_eq!(document.frontmatter.len(), 10);
+        assert_eq!(document.frontmatter["title"], "Release Plan");
+        assert_eq!(document.frontmatter["date"], "2026-10-13");
+        assert_eq!(document.frontmatter["due"], "2026-10-20");
+        assert_eq!(document.frontmatter["tags"], "project, release");
+        assert_eq!(document.frontmatter["status"], "in-progress");
+        assert_eq!(document.frontmatter["type"], "task");
+        assert_eq!(document.frontmatter["priority"], "high");
+        assert_eq!(document.frontmatter["project"], "Nero");
+        assert_eq!(document.frontmatter["author"], "Saeid");
+        assert_eq!(document.frontmatter["source"], "https://example.com/plan");
+        assert!(document.html.contains("<h1>Release Plan</h1>"));
+        assert!(!document.html.contains("date: 2026-10-13"));
+    }
+
+    #[test]
     fn parses_title_links_labels_tasks_and_math() {
         let body = "---\ntitle: Fourier Notes\ntags: math, dsp\n---\n\n# Ignored\n\n- [ ] Open\n- [x] Done\n\nSee [[Signal Processing|DSP]]. And [[Complex Analysis]].\n\n$$x^2$$";
         let document = parse(body);

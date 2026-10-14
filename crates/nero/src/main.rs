@@ -71,6 +71,12 @@ fn run() -> Result<()> {
             let note = workspace.create_note(&title)?;
             println!("created {}", note.path.display());
         }
+        "delete" | "rm" => {
+            let query = join_args(args)?;
+            let workspace = selected_workspace(workspace_override.as_deref())?;
+            let note = workspace.delete_note(&query)?;
+            println!("deleted {}", note.path.display());
+        }
         "list" | "ls" => {
             let workspace = selected_workspace(workspace_override.as_deref())?;
             print_notes(workspace.list_notes()?);
@@ -951,95 +957,97 @@ fn backup_timestamp() -> String {
 
 fn print_help() {
     println!(
-        r#"Nero — Markdown notes, search, links, and math across CLI, terminal, and desktop.
+        r#"Nero — Simple but powerful.
+Markdown notes for the CLI, terminal, and desktop.
 
 USAGE
+  nero [-w PATH|NAME] <command> [arguments]
   nero [--workspace PATH|NAME] <command> [arguments]
-  nero -w PATH|NAME <command> [arguments]
-
-APPLICATION HOME
-  home                    Show Nero's application home and data directories
-  home path               Print the application home path (default ~/.nero)
-
-WORKSPACES
-  workspace home          Show the parent directory for workspaces (default ~/.nero/workspaces)
-  workspace home set <path>
-                          Choose a different parent directory
-  workspace home reset   Return to $NERO_HOME/workspaces
-  workspace create <name>
-                          Create and register a workspace under that directory
-  workspace set <path>    Set the default to an initialized workspace
-  workspace add <name> <path>
-                          Register an existing workspace
-  workspace use <name>    Make a named workspace the default
-  workspace list          List registered workspaces
-  workspace show          Show the workspace currently selected
-  workspace remove <name> Remove a registered workspace
-  workspace clear         Clear the saved default workspace
-  --workspace / -w        Override the workspace for one command
-
-COMMANDS
-  init [path]             Create a workspace
-  new <title>             Create a Markdown note
-  list                    List notes
-  open <note>             Print a note
-  edit <note>             Open a note in $EDITOR
-  find <query>            Search notes
-  backlinks <note>        Find notes linking to a note
-  today                   Open today's daily note and list due/overdue notes
-  render <note>           Render a note to HTML
-  reindex                 Rebuild/update the search index
-  watch                   Watch Markdown files and refresh the index
-  doctor                  Check workspace health
-  backup create [path]    Create a portable local backup
-  backup create --encrypt [path]
-                          Create an age-encrypted workspace backup
-  backup home create [path.zip.age]
-                          Create a passphrase-encrypted full-home backup
-  backup home verify <path.zip.age>
-                          Verify a full-home backup
-  backup home restore <path.zip.age> [destination]
-                          Restore the whole Nero home on this/new machine
-  backup home recovery-test <path.zip.age>
-                          Test a full-home backup without replacing anything
-  backup inspect <file>   Inspect an unencrypted Nero backup manifest
-  backup verify <file>    Verify a ZIP or decrypt+verify an age backup
-  backup restore <file> <dir>
-                          Restore a ZIP or age backup into an empty directory
-  backup recovery-test <file>
-                          Decrypt/restore to a temp dir and verify recovery
-  backup push <storage>   Create and upload a backup through rclone
-  backup list <storage>  List remote backup snapshots
-  backup pull <storage> <file> <dir>
-                          Download and restore a remote backup
-  storage add <name> <target> [--encrypt]
-                          Register an rclone target; optionally require encrypted backups
-  storage list            List configured storage targets
-  storage test <name>     Check an rclone target
-  storage remove <name>  Remove a storage target from Nero
-  key generate [--force] Generate Nero's age backup identity
-  key show                Show identity location and public recipient
-  key path                Print the identity path
-  git init                Initialize Git versioning
-  git status              Show Git status
-  git snapshot <message>  Stage workspace and create a commit
-  git remote [add ...]    Show or add a remote
-  git push/pull [remote]  Push/pull using Git
-  gui                     Run the desktop interface (requires `nero-gui`)
-  tui                     Run the terminal interface
-  help                    Show this help
-  version                 Show the version
-
-WORKSPACE SELECTION
-  --workspace PATH|NAME (or -w) overrides the selected workspace for one command.
-  Otherwise Nero uses NERO_WORKSPACE, directory discovery, then the saved default.
-  New named workspaces are created under $NERO_HOME/workspaces (default ~/.nero/workspaces).
-  Config, backup keys, named workspaces, and local backups live beneath $NERO_HOME.
-  Set NERO_HOME to an absolute path to relocate Nero's entire application home.
-  `backup home create` encrypts the complete app home with a separate passphrase.
 
 NOTES
-  Notes are ordinary Markdown files.
+  init [path]               Create a workspace
+  new <title>               Create a Markdown note with title/date frontmatter
+  list                      List notes
+  open <note>               Print a note
+  edit <note>               Open a note in $EDITOR
+  delete <note>             Permanently delete a Markdown note (alias: rm)
+  find <query>              Search note content
+  backlinks <note>          Find notes linking to a note
+  today                     Open today's daily note and list due/overdue notes
+  render <note>             Render a note to HTML
+  reindex                   Refresh the search index
+  watch                     Watch Markdown files and refresh the index
+  doctor                    Check workspace health
+
+WORKSPACES
+  workspace home [show|set <path>|reset]
+                              Show or change the workspaces directory
+  workspace create <name>     Create and register a workspace
+  workspace set <path>        Set the default to an initialized workspace
+  workspace add <name> <path>
+                              Register an existing workspace
+  workspace use <name>        Make a named workspace the default
+  workspace list            List registered workspaces
+  workspace show            Show the selected workspace
+  workspace remove <name>   Unregister a workspace (alias: rm)
+  workspace clear           Clear the saved default
+
+APPLICATION HOME
+  home                      Show Nero's application home and data paths
+  home path                 Print only the application home path
+
+BACKUPS
+  backup create [path]      Create a portable local backup
+  backup create --encrypt [path]
+                              Create an age-encrypted workspace backup
+  backup verify <file>      Verify a ZIP or decrypt and verify an age backup
+  backup inspect <file>     Inspect an unencrypted backup manifest
+  backup restore <file> <dir>
+                              Restore a backup into an empty directory
+  backup recovery-test <file>
+                              Test recovery in a temporary directory
+  backup push <storage>     Create and upload a backup through rclone
+  backup list <storage>     List remote backup snapshots
+  backup pull <storage> <file> <dir>
+                              Download and restore a remote backup
+  backup home create [path.zip.age]
+                              Create an encrypted full-home backup
+  backup home verify <file> Verify a full-home backup
+  backup home restore <file> [destination]
+                              Restore a full home on this/new machine
+  backup home recovery-test <file>
+                              Test full-home recovery without replacing files
+
+STORAGE & KEYS
+  storage add <name> <target> [--encrypt]
+                              Register an rclone target
+  storage list              List configured storage targets
+  storage test <name>       Check a storage target
+  storage remove <name>     Remove a storage target from Nero
+  key generate [--force]    Generate Nero's age backup identity
+  key show                  Show identity location and public recipient
+  key path                  Print the identity path
+
+GIT & INTERFACES
+  git init                  Initialize Git versioning
+  git status                Show Git status
+  git snapshot <message>    Stage workspace changes and create a commit
+  git remote [add ...]      Show or add a Git remote
+  git push [remote]         Push commits using Git
+  git pull [remote]         Pull commits using Git
+  gui                       Run the desktop interface (requires nero-gui)
+  tui                       Run the terminal interface
+  help                      Show this help
+  version                   Show the Nero version
+
+WORKSPACE SELECTION
+  -w PATH|NAME, --workspace PATH|NAME overrides the selected workspace for one command.
+  Otherwise Nero uses NERO_WORKSPACE, directory discovery, then the saved default.
+  Named workspaces live under $NERO_HOME/workspaces (default ~/.nero/workspaces).
+  Set NERO_HOME to an absolute path to relocate Nero's application home and keys.
+
+MARKDOWN
+  Notes are ordinary Markdown files; new notes include title/date frontmatter.
   Internal links use [[Note Name]].
   Math supports $...$, $$...$$, \(...\), and \[...\] via Comrak.
 "#

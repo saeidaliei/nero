@@ -9,7 +9,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:info": "tauri info"
+    "tauri:info": "tauri info",
+    "test": "node --experimental-strip-types --test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

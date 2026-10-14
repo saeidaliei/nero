@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import katex from 'katex';
+import { isDuplicateDocumentTitle, renderMetadataChips, renderMetadataRows } from './metadata';
 import 'katex/dist/katex.min.css';
 import './style.css';
 
@@ -153,15 +154,19 @@ function renderReader() {
     return;
   }
 
+  const metadataChips = renderMetadataChips(current.frontmatter);
   const header = `
     <div class="document-header ${viewMode !== 'read' ? 'compact' : ''}">
       <div class="eyebrow">${esc(current.note.path)}</div>
       <h1>${esc(current.note.title)}${dirty ? '<span class="dirty-dot" title="Unsaved changes"></span>' : ''}</h1>
+      ${metadataChips ? `<div class="document-metadata" aria-label="Note metadata">${metadataChips}</div>` : ''}
     </div>
   `;
 
   if (viewMode === 'read') {
     reader.innerHTML = `${header}<div class="document-body">${current.html}</div>`;
+    const body = reader.querySelector<HTMLElement>('.document-body');
+    if (body) hideDuplicateDocumentTitle(body, current.note.title);
     renderMath(reader);
     wireWikiLinks(reader);
     void hydrateImages(reader, current.note.path);
@@ -433,6 +438,7 @@ async function updateLivePreview() {
     const html = await invoke<string>('render_markdown', { source: draft });
     if (revision !== previewRevision || viewMode !== 'split') return;
     preview.innerHTML = html;
+    hideDuplicateDocumentTitle(preview, current.note.title);
     renderMath(preview);
     void hydrateImages(preview, current.note.path);
     syncPreviewScroll(document.querySelector<HTMLTextAreaElement>('#source-editor')!);
@@ -546,6 +552,12 @@ async function toggleEditor() {
   markDirty(false);
 }
 
+function hideDuplicateDocumentTitle(container: HTMLElement, title: string) {
+  const first = container.firstElementChild;
+  if (!isDuplicateDocumentTitle(first?.tagName, first?.textContent ?? '', title)) return;
+  first?.remove();
+}
+
 function renderMath(root: Element) {
   root.querySelectorAll<HTMLElement>('[data-math-style]').forEach((element) => {
     const source = element.textContent?.trim() ?? '';
@@ -633,9 +645,7 @@ async function renderInspector() {
   const links = current.wikiLinks.map((link) => `
     <div class="context-link"><span>→</span><span>${esc(link.label ?? link.target)}</span></div>
   `).join('');
-  const meta = current.frontmatter.map(([key, value]) => `
-    <div class="meta-row"><span>${esc(key)}</span><span>${esc(value)}</span></div>
-  `).join('');
+  const meta = renderMetadataRows(current.frontmatter);
 
   inspector.innerHTML = panelMarkup('Context', `
     <div class="stat-grid">

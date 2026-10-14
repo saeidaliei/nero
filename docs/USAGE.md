@@ -45,6 +45,7 @@ The everyday commands are, for example:
 nero list
 nero find "something"
 nero edit "An idea"
+nero delete "An idea"  # permanently delete a note
 nero today
 nero tui
 ```
@@ -89,6 +90,8 @@ nero doctor                      Check workspace health
 ```
 
 Run `nero --help` for the full command set, including Git and backup commands.
+
+`nero delete <note>` (also `nero rm <note>`) permanently removes the selected Markdown file from the current workspace.
 
 ## TUI
 
@@ -139,7 +142,7 @@ rm .nero/index.sqlite
 nero reindex
 ```
 
-Do not delete the Markdown files; only the index is a cache.
+When rebuilding the search index, remove only `.nero/index.sqlite`; Markdown files are the source of truth.
 
 ## Git, backups, and remote storage
 

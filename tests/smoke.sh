@@ -23,6 +23,9 @@ fi
 
 "$NERO_BIN" init "$TMP"
 cd "$TMP"
+"$NERO_BIN" new "Disposable Smoke Note"
+"$NERO_BIN" delete "Disposable Smoke Note" | grep -F "disposable-smoke-note.md"
+test ! -e disposable-smoke-note.md
 "$NERO_BIN" new "Fourier Transform"
 grep -Fxq 'title: Fourier Transform' fourier-transform.md
 grep -Eq '^date: [0-9]{4}-[0-9]{2}-[0-9]{2}$' fourier-transform.md

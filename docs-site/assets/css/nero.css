@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
   --paper: #fff;
+  --header-paper: #fafafa;
   --ink: #222;
   --muted: #666;
   --quiet: #999;
@@ -15,6 +16,7 @@
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
+  background: var(--paper);
   color: var(--ink);
   font: 500 1rem/1.54 var(--sans);
   font-feature-settings: "liga", "tnum", "case", "calt", "zero", "ss01", "locl";
@@ -27,8 +29,8 @@ button, input { font: inherit; }
 .skip-link { position: fixed; left: 1rem; top: -3rem; padding: .6rem .8rem; background: var(--ink); color: #fff; z-index: 20; }
 .skip-link:focus { top: 1rem; }
 
-.topbar { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); background: #fff; }
-.topbar-inner { width: min(860px, calc(100% - 2rem)); margin: 0 auto; min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.topbar { position: sticky; top: 0; z-index: 10; border: 0; background: var(--header-paper); }
+.topbar-inner { width: min(760px, calc(100% - 2rem)); margin: 0 auto; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .brand { display: inline-flex; align-items: center; gap: .5rem; text-decoration: none; font-weight: 800; letter-spacing: -.03em; }
 .brand-mark { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--ink); font-size: .95rem; font-weight: 600; }
 .brand-word { font-size: 1.05rem; }
