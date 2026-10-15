@@ -27,6 +27,14 @@ cd "$TMP"
 "$NERO_BIN" delete "Disposable Smoke Note" | grep -F "disposable-smoke-note.md"
 test ! -e disposable-smoke-note.md
 "$NERO_BIN" new "Fourier Transform"
+"$NERO_BIN" new "ID Lookup Smoke Note"
+NOTE_ID="$("$NERO_BIN" list | sed -n '/ID Lookup Smoke Note/s/^[^0-9]*\([0-9][0-9]*\).*/\1/p')"
+test -n "$NOTE_ID"
+"$NERO_BIN" open "$NOTE_ID" | grep -F "ID Lookup Smoke Note"
+"$NERO_BIN" delete "$NOTE_ID"
+test ! -e id-lookup-smoke-note.md
+"$NERO_BIN" list --long | grep -F "Metadata:"
+"$NERO_BIN" config show | grep -F "Nero configuration"
 grep -Fxq 'title: Fourier Transform' fourier-transform.md
 grep -Eq '^date: [0-9]{4}-[0-9]{2}-[0-9]{2}$' fourier-transform.md
 mkdir -p math/notes

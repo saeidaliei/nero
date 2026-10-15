@@ -42,11 +42,14 @@ nero new "An idea"
 The everyday commands are, for example:
 
 ```bash
-nero list
+nero list                    # table with persistent note IDs and timestamps
+nero list --long             # also show frontmatter metadata
 nero find "something"
-nero edit "An idea"
-nero delete "An idea"  # permanently delete a note
+nero edit "An idea"           # title/path also work
+nero edit 3                   # use the ID shown by `nero list`
+nero delete 3                 # IDs work for delete/open/render/backlinks too
 nero today
+nero config show             # resolved config, keys, remotes, and rclone setup
 nero tui
 ```
 
@@ -77,9 +80,11 @@ nero workspace add <name> <path> Register an existing workspace
 nero workspace use <name>        Select a named default
 nero workspace list              List configured workspaces
 nero new <title>                 Create a Markdown note
-nero list                        List notes
-nero open <note>                 Print a note
-nero edit <note>                 Open a note in $EDITOR or $VISUAL
+nero list [-l|--long]            List notes with stable IDs and timestamps
+nero open <note|ID>              Print a note; a numeric ID or #ID works
+nero edit <note|ID>              Open a note in $EDITOR or $VISUAL
+nero config show                 Show paths, workspace config, keys, and remotes
+nero config path                 Print the user config file path
 nero find <query>                Search notes
 nero backlinks <note>            Find notes linking to a note
 nero today                       Create/locate today's daily note and list due notes
@@ -91,7 +96,9 @@ nero doctor                      Check workspace health
 
 Run `nero --help` for the full command set, including Git and backup commands.
 
-`nero delete <note>` (also `nero rm <note>`) permanently removes the selected Markdown file from the current workspace.
+`nero delete <note>` (also `nero rm <note>`) permanently removes the selected Markdown file from the current workspace. `nero list` assigns integer IDs, kept in `.nero/note-ids.sqlite`; IDs stay stable across reindex and aren't reused after `nero delete`. IDs are local to a workspace, so use `-w <workspace>` first when working in another workspace. A `#` prefix is an explicit ID reference (quote it in shells, e.g. `nero open '#3'`); a bare number also resolves as an ID if no note path with that name exists.
+
+`nero config show` summarizes the active application/config paths, registered workspaces, backup identity location and public recipient, workspace storage profiles, Git remotes, and rclone configuration file/remotes. It never prints the private backup identity or reads provider credentials into its output; cloud provider credentials remain managed by rclone.
 
 ## TUI
 

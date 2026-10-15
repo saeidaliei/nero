@@ -50,6 +50,18 @@ fn run() -> Result<()> {
                 }
             }
         }
+        "config" => match args.next().as_deref() {
+            None | Some("show") => print_config_show(workspace_override.as_deref())?,
+            Some("path") => println!("{}", config::config_path()?.display()),
+            Some("help") | Some("--help") | Some("-h") => {
+                println!("config [show|path] — show resolved configuration and storage settings")
+            }
+            Some(other) => {
+                return Err(nero_core::NeroError::Message(format!(
+                    "unknown config command `{other}`; use `nero config show` or `nero config path`"
+                )));
+            }
+        },
         "init" => {
             let root = args
                 .next()
@@ -78,8 +90,26 @@ fn run() -> Result<()> {
             println!("deleted {}", note.path.display());
         }
         "list" | "ls" => {
+            let values = args.collect::<Vec<_>>();
+            let long = values
+                .iter()
+                .any(|value| matches!(value.as_str(), "-l" | "--long"));
+            if let Some(unexpected) = values
+                .iter()
+                .find(|value| !matches!(value.as_str(), "-l" | "--long"))
+            {
+                return Err(nero_core::NeroError::Message(format!(
+                    "unknown list option `{unexpected}`; use `nero list [-l|--long]`"
+                )));
+            }
             let workspace = selected_workspace(workspace_override.as_deref())?;
-            print_notes(workspace.list_notes()?);
+            let label = workspace_label(&workspace);
+            print_note_listing(
+                workspace.list_note_details()?,
+                &label,
+                workspace.root(),
+                long,
+            );
         }
         "open" => {
             let query = join_args(args)?;
@@ -967,14 +997,14 @@ USAGE
 NOTES
   init [path]               Create a workspace
   new <title>               Create a Markdown note with title/date frontmatter
-  list                      List notes
-  open <note>               Print a note
-  edit <note>               Open a note in $EDITOR
-  delete <note>             Permanently delete a Markdown note (alias: rm)
+  list [-l|--long]          List notes with IDs and timestamps; -l includes frontmatter
+  open <note|ID>            Print a note (an integer ID or #ID also works)
+  edit <note|ID>            Open a note in $EDITOR
+  delete <note|ID>          Permanently delete a note by title, path, or ID (alias: rm)
   find <query>              Search note content
-  backlinks <note>          Find notes linking to a note
+  backlinks <note|ID>       Find notes linking to a note
   today                     Open today's daily note and list due/overdue notes
-  render <note>             Render a note to HTML
+  render <note|ID>          Render a note to HTML
   reindex                   Refresh the search index
   watch                     Watch Markdown files and refresh the index
   doctor                    Check workspace health
@@ -992,9 +1022,11 @@ WORKSPACES
   workspace remove <name>   Unregister a workspace (alias: rm)
   workspace clear           Clear the saved default
 
-APPLICATION HOME
+APPLICATION HOME & CONFIGURATION
   home                      Show Nero's application home and data paths
   home path                 Print only the application home path
+  config show               Show resolved config, workspace, keys, remotes, and cloud setup
+  config path               Print the user configuration file path
 
 BACKUPS
   backup create [path]      Create a portable local backup
@@ -1048,6 +1080,8 @@ WORKSPACE SELECTION
 
 MARKDOWN
   Notes are ordinary Markdown files; new notes include title/date frontmatter.
+  `nero list` assigns persistent integer IDs; use `nero edit 3`, `nero delete 3`, or `nero open '#3'`.
+  `nero list -l` shows additional frontmatter fields. IDs are workspace-local and don't change on reindex.
   Internal links use [[Note Name]].
   Math supports $...$, $$...$$, \(...\), and \[...\] via Comrak.
 "#
@@ -1062,6 +1096,328 @@ fn print_notes(notes: Vec<NoteSummary>) {
     for note in notes {
         println!("{:30} {}", note.title, note.path.display());
     }
+}
+
+fn print_note_listing(
+    notes: Vec<nero_core::NoteListEntry>,
+    workspace_name: &str,
+    workspace_path: &std::path::Path,
+    long: bool,
+) {
+    println!(
+        "Workspace: {workspace_name}  ({})",
+        workspace_path.display()
+    );
+    if notes.is_empty() {
+        println!("No notes yet. Create one with `nero new <title>`.");
+        return;
+    }
+
+    let headers = ["ID", "TITLE", "CREATED", "LAST EDITED", "PATH"];
+    let widths = [4, 34, 10, 16, 30];
+    let rows = notes
+        .iter()
+        .map(|note| {
+            vec![
+                note.id.to_string(),
+                note.summary.title.clone(),
+                note.created.clone().unwrap_or_else(|| "—".into()),
+                note.modified.clone().unwrap_or_else(|| "—".into()),
+                note.summary.path.to_string_lossy().into_owned(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    print_table(&headers, &rows, &widths);
+
+    if long {
+        for note in &notes {
+            let fields = note
+                .metadata
+                .iter()
+                // The title is already displayed in the table, so avoid repeating it.
+                .filter(|(key, _)| key.as_str() != "title")
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>();
+            if fields.is_empty() {
+                println!("  {}  Metadata: (none)", note.id);
+            } else {
+                println!("  {}  Metadata: {}", note.id, fields.join(" · "));
+            }
+        }
+        println!("  Metadata omits `title` because it is shown in the TITLE column.");
+    }
+}
+
+fn print_table(headers: &[&str], rows: &[Vec<String>], widths: &[usize]) {
+    fn border(widths: &[usize], left: char, middle: char, right: char) -> String {
+        let mut line = String::new();
+        line.push(left);
+        for (index, width) in widths.iter().enumerate() {
+            if index > 0 {
+                line.push(middle);
+            }
+            line.push_str(&"─".repeat(width + 2));
+        }
+        line.push(right);
+        line
+    }
+    fn row(cells: &[String], widths: &[usize]) -> String {
+        let mut line = String::from("│");
+        for (index, width) in widths.iter().enumerate() {
+            let value = cells.get(index).map(String::as_str).unwrap_or("");
+            line.push(' ');
+            line.push_str(&fit_cell(value, *width));
+            line.push(' ');
+            line.push('│');
+        }
+        line
+    }
+
+    println!("{}", border(widths, '┌', '┬', '┐'));
+    let header_cells = headers
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
+    println!("{}", row(&header_cells, widths));
+    println!("{}", border(widths, '├', '┼', '┤'));
+    for values in rows {
+        println!("{}", row(values, widths));
+    }
+    println!("{}", border(widths, '└', '┴', '┘'));
+}
+
+fn fit_cell(value: &str, width: usize) -> String {
+    let chars = value.chars().collect::<Vec<_>>();
+    let fitted = if chars.len() > width {
+        if width == 0 {
+            String::new()
+        } else if width == 1 {
+            "…".to_owned()
+        } else {
+            format!("{}…", chars[..width - 1].iter().collect::<String>())
+        }
+    } else {
+        value.to_owned()
+    };
+    let padding = width.saturating_sub(fitted.chars().count());
+    format!("{fitted}{}", " ".repeat(padding))
+}
+
+fn workspace_label(workspace: &Workspace) -> String {
+    let root = canonical_or_original(workspace.root());
+    if let Ok(view) = config::view() {
+        if let Some((name, _)) = view
+            .workspaces
+            .iter()
+            .find(|(_, path)| canonical_or_original(path) == root)
+        {
+            return name.clone();
+        }
+        if view
+            .default_workspace_path
+            .as_ref()
+            .is_some_and(|path| canonical_or_original(path) == root)
+        {
+            return "default".to_owned();
+        }
+    }
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace")
+        .to_owned()
+}
+
+fn canonical_or_original(path: &std::path::Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn print_config_show(workspace_override: Option<&str>) -> Result<()> {
+    let home = nero_home_dir()?;
+    let config_path = config::config_path()?;
+
+    println!("Nero configuration");
+    println!("──────────────────");
+    println!("Application home : {}", home.display());
+    println!(
+        "User config      : {} ({})",
+        config_path.display(),
+        if config_path.exists() {
+            "exists"
+        } else {
+            "defaults; file not created yet"
+        }
+    );
+    println!("Backup key dir   : {}", Workspace::config_dir()?.display());
+    println!("Workspace home   : {}", config::workspace_home()?.display());
+    println!("NERO_HOME        : {}", env_status("NERO_HOME"));
+    println!("NERO_CONFIG_HOME : {}", env_status("NERO_CONFIG_HOME"));
+    println!("NERO_CONFIG_DIR  : {}", env_status("NERO_CONFIG_DIR"));
+    println!("NERO_WORKSPACE   : {}", env_status("NERO_WORKSPACE"));
+
+    if let Ok(view) = config::view() {
+        let default_workspace = view
+            .default_workspace_name
+            .as_ref()
+            .map(|name| format!("name `{name}`"))
+            .or_else(|| {
+                view.default_workspace_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+            })
+            .unwrap_or_else(|| "not set (directory discovery is used)".to_owned());
+        println!("Default workspace: {default_workspace}");
+        println!("Registered workspaces:");
+        if view.workspaces.is_empty() {
+            println!("  (none)");
+        } else {
+            for (name, path) in view.workspaces {
+                println!("  {name:18} {}", path.display());
+            }
+        }
+    }
+
+    println!("\nBackup identity");
+    match Workspace::backup_key_info()? {
+        Some(key) => {
+            println!(
+                "  Private identity: {} (present; contents are never printed)",
+                key.identity_path.display()
+            );
+            println!("  Public recipient: {}", key.recipient);
+        }
+        None => {
+            println!(
+                "  Not generated yet. Run `nero key generate` to enable age-encrypted workspace backups."
+            );
+            println!("  Expected path: {}", Workspace::identity_path()?.display());
+        }
+    }
+
+    println!("\nActive workspace remotes");
+    match selected_workspace(workspace_override) {
+        Ok(workspace) => {
+            println!(
+                "  Workspace: {} ({})",
+                workspace_label(&workspace),
+                workspace.root().display()
+            );
+            println!(
+                "  Workspace settings: {}",
+                workspace.storage_config_path().display()
+            );
+            let remotes = workspace.storage_remotes()?;
+            if remotes.is_empty() {
+                println!("  Nero storage profiles: (none)");
+            } else {
+                println!("  Nero storage profiles (rclone targets):");
+                for remote in remotes {
+                    let encryption = if remote.encrypt_backups {
+                        " [encrypted backups]"
+                    } else {
+                        ""
+                    };
+                    println!(
+                        "    {:16} {}{}",
+                        remote.name,
+                        redact_remote_url(&remote.target),
+                        encryption
+                    );
+                }
+            }
+
+            if workspace.root().join(".git").exists() {
+                println!("  Git remotes:");
+                match workspace.git_remotes() {
+                    Ok(output) if output.trim().is_empty() => {
+                        println!("    (repository has no remotes)");
+                    }
+                    Ok(output) => {
+                        for line in output.lines() {
+                            let mut parts = line.split_whitespace();
+                            let name = parts.next().unwrap_or("remote");
+                            let url = parts.next().unwrap_or("");
+                            let kind = parts.next().unwrap_or("");
+                            println!("    {name:16} {} {kind}", redact_remote_url(url));
+                        }
+                    }
+                    Err(error) => println!("    unable to read Git remotes: {error}"),
+                }
+            } else {
+                println!("  Git remotes: (Git is not initialized in this workspace)");
+            }
+        }
+        Err(error) => println!("  No active workspace could be resolved: {error}"),
+    }
+
+    println!("\nCloud / rclone");
+    match ProcessCommand::new("rclone")
+        .args(["config", "file"])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if let Some(path) = stdout.lines().map(str::trim).rfind(|line| !line.is_empty()) {
+                println!("  rclone config: {path}");
+            } else {
+                println!("  rclone is installed; config path was not reported.");
+            }
+            match ProcessCommand::new("rclone").arg("listremotes").output() {
+                Ok(remotes) if remotes.status.success() => {
+                    let names = String::from_utf8_lossy(&remotes.stdout);
+                    let names = names
+                        .lines()
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty())
+                        .collect::<Vec<_>>();
+                    if names.is_empty() {
+                        println!("  Configured rclone remotes: (none)");
+                    } else {
+                        println!("  Configured rclone remotes: {}", names.join(", "));
+                    }
+                }
+                _ => println!("  Could not enumerate rclone remote names."),
+            }
+        }
+        _ => {
+            println!("  rclone is not installed or has no readable config.");
+            println!("  Nero stores target names, not provider credentials.");
+        }
+    }
+    println!(
+        "\nUse `nero config path`, `nero home`, `nero workspace show`, and `nero storage list`."
+    );
+    println!("These commands show focused configuration views.");
+    Ok(())
+}
+
+fn env_status(name: &str) -> String {
+    match env::var_os(name) {
+        Some(value) => format!("set ({})", value.to_string_lossy()),
+        None => "not set".to_owned(),
+    }
+}
+
+fn redact_remote_url(value: &str) -> String {
+    // Avoid echoing HTTP basic-auth credentials or token query strings in a config dump.
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return value.to_owned();
+    };
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let suffix = &rest[authority_end..];
+    let safe_authority = if let Some((_, host)) = authority.rsplit_once('@') {
+        format!("[redacted]@{host}")
+    } else {
+        authority.to_owned()
+    };
+    let safe_suffix = match suffix.find(['?', '#']) {
+        Some(start) if suffix[start..].starts_with('?') => {
+            format!("{}?[redacted]", &suffix[..start])
+        }
+        Some(start) => format!("{}#[redacted]", &suffix[..start]),
+        None => suffix.to_owned(),
+    };
+    format!("{scheme}://{safe_authority}{safe_suffix}")
 }
 
 fn print_search(results: Vec<SearchResult>) {
@@ -1123,5 +1479,19 @@ mod cli_tests {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         assert!(extract_workspace_option(&mut args).is_err());
+    }
+
+    #[test]
+    fn config_dump_redacts_embedded_url_credentials_and_query() {
+        let value = redact_remote_url("https://alice:supersecret@example.com/repo?token=abc");
+        assert_eq!(value, "https://[redacted]@example.com/repo?[redacted]");
+        assert!(!value.contains("supersecret"));
+        assert!(!value.contains("abc"));
+    }
+
+    #[test]
+    fn table_cells_are_clipped_and_padded() {
+        assert_eq!(fit_cell("abc", 5), "abc  ");
+        assert_eq!(fit_cell("abcdef", 4), "abc…");
     }
 }

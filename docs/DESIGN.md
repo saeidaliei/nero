@@ -13,16 +13,18 @@ workspace/
 ├── assets/
 ├── *.md
 └── .nero/
-    └── index.sqlite
+    ├── index.sqlite       # rebuildable search/link cache
+    ├── note-ids.sqlite    # persistent numeric note IDs
+    └── storage.json       # optional rclone target profiles
 ```
 
 Nero recursively discovers `.md` files beneath the workspace root. Directories are ordinary filesystem organization.
 
 ## Note identity
 
-A note is identified by its relative path. A title is presentation metadata, not the canonical identifier. This keeps links portable and keeps Git diffs understandable.
+A note's canonical content location is still its workspace-relative path. The title is presentation metadata, not the canonical identifier, so links and Markdown files remain portable.
 
-Friendly aliases can be layered on later, but they must not destroy path-based portability.
+The CLI also provides a workspace-local integer shortcut (shown by `nero list`) so commands can use `nero edit 3` instead of a long title. The mapping lives in `.nero/note-ids.sqlite`, separate from the rebuildable search index. IDs are stable across reindexing, are not reused after a `nero delete`, and travel with workspace backups. They are convenience handles rather than frontmatter, and path-based references remain supported.
 
 ## Internal links
 

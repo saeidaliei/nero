@@ -52,9 +52,9 @@ impl BackupManifest {
 impl Workspace {
     /// Create a portable, unencrypted ZIP snapshot of the workspace.
     ///
-    /// `.nero` and `.git` are intentionally excluded because they are derived/cache or
-    /// version-control internals. Encryption is intentionally a separate layer and will
-    /// wrap this archive rather than altering the live workspace.
+    /// `.git`, the rebuildable search index, and workspace storage settings are excluded.
+    /// The persistent note-ID registry is included because it is user-visible identity
+    /// data and must survive restoring a workspace backup. Encryption is a separate layer.
     pub fn create_backup(
         &self,
         destination: impl AsRef<Path>,
@@ -148,6 +148,9 @@ impl Workspace {
         }
 
         verify_extracted_manifest(&manifest, destination)?;
+        // Older backups omit all `.nero` metadata; ensure the restored directory is still
+        // recognized as an initialized workspace when no persistent ID registry was present.
+        fs::create_dir_all(destination.join(".nero"))?;
         Ok(manifest.stats())
     }
 
@@ -800,7 +803,37 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<BackupEntry>) -> Result<
             )));
         }
         if file_type.is_dir() {
-            if name == ".nero" || name == ".git" {
+            if name == ".git" {
+                continue;
+            }
+            if name == ".nero" {
+                // Most workspace metadata is disposable or environment-specific, but the
+                // stable note-ID mapping is part of the user-visible workspace identity.
+                // Include only this file; keep the search index and remote configuration out.
+                let registry_path = path.join("note-ids.sqlite");
+                match fs::symlink_metadata(&registry_path) {
+                    Ok(registry_metadata) if registry_metadata.file_type().is_symlink() => {
+                        return Err(NeroError::Message(format!(
+                            "symlinks are not supported in backups: {}",
+                            registry_path.display()
+                        )));
+                    }
+                    Ok(registry_metadata) if registry_metadata.is_file() => {
+                        let relative = registry_path
+                            .strip_prefix(root)
+                            .unwrap_or(&registry_path)
+                            .to_string_lossy()
+                            .replace('\\', "/");
+                        out.push(BackupEntry {
+                            path: relative,
+                            size: registry_metadata.len(),
+                            sha256: sha256_file(&registry_path)?,
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
                 continue;
             }
             collect_files(root, &path, out)?;
@@ -942,6 +975,49 @@ mod home_backup_tests {
             std::env::temp_dir().join(format!("nero-home-backup-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         path
+    }
+
+    #[test]
+    fn workspace_backup_preserves_note_ids_but_omits_other_nero_state() {
+        let root = temporary("note-id-workspace");
+        let workspace = Workspace::init(&root).unwrap();
+        workspace.create_note("Stable ID Note").unwrap();
+        let original_id = workspace.list_note_details().unwrap()[0].id;
+        workspace.reindex().unwrap();
+        workspace
+            .storage_add("example", "local:/not-a-real-target", false)
+            .unwrap();
+
+        let archive = temporary("note-id-workspace-backup").with_extension("zip");
+        let (_, manifest) = workspace.create_backup(&archive).unwrap();
+        assert!(
+            manifest
+                .files
+                .iter()
+                .any(|entry| entry.path == ".nero/note-ids.sqlite")
+        );
+        assert!(
+            !manifest
+                .files
+                .iter()
+                .any(|entry| entry.path.starts_with(".nero/index.sqlite"))
+        );
+        assert!(
+            !manifest
+                .files
+                .iter()
+                .any(|entry| entry.path == ".nero/storage.json")
+        );
+
+        let restored_path = temporary("note-id-workspace-restored");
+        Workspace::restore_backup(&archive, &restored_path).unwrap();
+        let restored = Workspace::open(&restored_path).unwrap();
+        let restored_entry = restored.list_note_details().unwrap().remove(0);
+        assert_eq!(restored_entry.id, original_id);
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_file(archive);
+        let _ = fs::remove_dir_all(restored_path);
     }
 
     #[test]

@@ -3,12 +3,14 @@ mod document;
 mod encryption;
 mod git;
 mod index;
+mod note_ids;
 mod storage;
 mod watcher;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 use std::{
+    collections::BTreeMap,
     env,
     error::Error,
     fmt, fs,
@@ -17,7 +19,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, Local, NaiveDate};
 use tempfile::NamedTempFile;
 
 pub use backup::{BackupEntry, BackupManifest, BackupStats};
@@ -29,6 +31,7 @@ pub use storage::{RemoteBackup, StorageRemote};
 pub use watcher::WorkspaceWatcher;
 
 use index::Index;
+use note_ids::NoteIdRegistry;
 
 pub type Result<T> = std::result::Result<T, NeroError>;
 
@@ -141,6 +144,17 @@ impl From<notify::Error> for NeroError {
 pub struct NoteSummary {
     pub path: PathBuf,
     pub title: String,
+}
+
+/// A note row enriched for CLI listings. Metadata comes from the Markdown frontmatter;
+/// the modification time comes from the filesystem and is displayed in local time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteListEntry {
+    pub id: u64,
+    pub summary: NoteSummary,
+    pub created: Option<String>,
+    pub modified: Option<String>,
+    pub metadata: BTreeMap<String, String>,
 }
 
 /// A note with a `due: YYYY-MM-DD` frontmatter date that is due today or overdue.
@@ -276,6 +290,70 @@ impl Workspace {
         Ok(notes)
     }
 
+    /// List notes with persistent per-workspace integer IDs, timestamps, and frontmatter.
+    pub fn list_note_details(&self) -> Result<Vec<NoteListEntry>> {
+        let notes = self.list_notes()?;
+        let paths = notes
+            .iter()
+            .map(|note| note.path.clone())
+            .collect::<Vec<_>>();
+        let mut registry = NoteIdRegistry::open(&self.note_ids_path())?;
+        let ids = registry.ensure_ids(&paths)?;
+        let mut entries = Vec::with_capacity(notes.len());
+
+        for summary in notes {
+            let absolute = self.root.join(&summary.path);
+            let metadata = fs::metadata(&absolute)?;
+            let source = fs::read_to_string(&absolute)?;
+            let document = Document::parse(&source);
+            let created = document
+                .frontmatter
+                .get("date")
+                .or_else(|| document.frontmatter.get("created"))
+                .cloned()
+                .or_else(|| metadata.created().ok().map(format_system_time));
+            let modified = metadata.modified().ok().map(format_system_time);
+            let key = normalize_note_path(&summary.path);
+            let id = *ids.get(&key).ok_or_else(|| {
+                NeroError::Message(format!(
+                    "could not allocate an ID for {}",
+                    summary.path.display()
+                ))
+            })?;
+            entries.push(NoteListEntry {
+                id,
+                summary,
+                created,
+                modified,
+                metadata: document.frontmatter,
+            });
+        }
+        Ok(entries)
+    }
+
+    fn note_ids_path(&self) -> PathBuf {
+        self.metadata_dir().join("note-ids.sqlite")
+    }
+
+    fn resolve_note_id(&self, id: u64) -> Result<Option<PathBuf>> {
+        let notes = self.list_notes()?;
+        let paths = notes
+            .iter()
+            .map(|note| note.path.clone())
+            .collect::<Vec<_>>();
+        let mut registry = NoteIdRegistry::open(&self.note_ids_path())?;
+        registry.ensure_ids(&paths)?;
+        let Some(path) = registry.path_for_id(id)? else {
+            return Ok(None);
+        };
+        // Old IDs stay in the registry after deletion so they are never recycled, but
+        // they resolve only while that Markdown note still exists in this workspace.
+        Ok(notes
+            .iter()
+            .find(|note| normalize_note_path(&note.path) == normalize_note_path(&path))
+            .map(|note| note.path.clone()))
+    }
+
     pub fn render_note_html(&self, query: &str) -> Result<String> {
         Ok(self.read_note(query)?.document.html)
     }
@@ -298,8 +376,13 @@ impl Workspace {
         }
 
         fs::remove_file(&canonical)?;
+        let relative = self.relative_path(&canonical);
+        if self.note_ids_path().exists() {
+            let mut registry = NoteIdRegistry::open(&self.note_ids_path())?;
+            registry.retire_path(&relative)?;
+        }
         Ok(NoteSummary {
-            path: self.relative_path(&canonical),
+            path: relative,
             title: note.summary.title,
         })
     }
@@ -601,6 +684,14 @@ impl Workspace {
         if raw.is_empty() {
             return Ok(None);
         }
+        // `#ID` is always interpreted as an ID; a bare number is considered an ID
+        // only after trying explicit filesystem paths (so `12.md` still works).
+        if let Some(id_text) = raw.strip_prefix('#') {
+            let Ok(id) = id_text.parse::<u64>() else {
+                return Ok(None);
+            };
+            return self.resolve_note_id(id);
+        }
         let path_query = PathBuf::from(raw);
         let candidates = [
             path_query.clone(),
@@ -611,6 +702,11 @@ impl Workspace {
             if let Some(path) = resolve_existing_note_candidate(&self.root, &candidate)? {
                 return Ok(Some(self.relative_path(&path)));
             }
+        }
+        if let Ok(id) = raw.parse::<u64>()
+            && let Some(path) = self.resolve_note_id(id)?
+        {
+            return Ok(Some(path));
         }
         let raw_lower = raw.to_lowercase();
         let raw_stem = raw.trim_end_matches(".md");
@@ -1044,6 +1140,16 @@ fn chrono_like_date() -> String {
     Local::now().date_naive().format("%Y-%m-%d").to_string()
 }
 
+fn format_system_time(time: std::time::SystemTime) -> String {
+    DateTime::<Local>::from(time)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
+fn normalize_note_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 #[cfg(test)]
 mod hardening_tests {
     use super::*;
@@ -1334,6 +1440,110 @@ mod tests {
         assert!(items[0].overdue);
         assert_eq!(items[1].summary.title, "Due today");
         assert!(!items[1].overdue);
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn note_ids_are_stable_across_reindex_and_can_be_used_to_resolve_notes() {
+        let root = temp_workspace("note-ids-stable");
+        let workspace = Workspace::init(&root).unwrap();
+        let alpha = workspace.create_note("Alpha").unwrap();
+        let alpha_id = workspace
+            .list_note_details()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.summary.path == alpha.path)
+            .unwrap()
+            .id;
+
+        // A newly-created note that sorts before Alpha must not renumber Alpha.
+        workspace.create_note("Aardvark").unwrap();
+        workspace.reindex().unwrap();
+        let entries = workspace.list_note_details().unwrap();
+        let alpha_after_reindex = entries
+            .iter()
+            .find(|entry| entry.summary.path == alpha.path)
+            .unwrap();
+        assert_eq!(alpha_after_reindex.id, alpha_id);
+        assert_eq!(
+            workspace
+                .read_note(&alpha_id.to_string())
+                .unwrap()
+                .summary
+                .path,
+            alpha.path
+        );
+        assert_eq!(
+            workspace
+                .read_note(&format!("#{alpha_id}"))
+                .unwrap()
+                .summary
+                .path,
+            alpha.path
+        );
+
+        workspace.delete_note(&alpha_id.to_string()).unwrap();
+        assert!(workspace.read_note(&alpha_id.to_string()).is_err());
+        let later = workspace.create_note("Later Note").unwrap();
+        let later_id = workspace
+            .list_note_details()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.summary.path == later.path)
+            .unwrap()
+            .id;
+        assert!(later_id > alpha_id, "deleted note IDs must not be recycled");
+        let recreated = workspace.create_note("Alpha").unwrap();
+        let recreated_id = workspace
+            .list_note_details()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.summary.path == recreated.path)
+            .unwrap()
+            .id;
+        assert!(
+            recreated_id > later_id,
+            "recreated notes must receive a new ID"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn note_listing_exposes_frontmatter_and_file_timestamps() {
+        let root = temp_workspace("note-list-details");
+        let workspace = Workspace::init(&root).unwrap();
+        fs::write(
+            root.join("release-plan.md"),
+            concat!(
+                "---\n",
+                "title: Release Plan\n",
+                "date: 2026-10-13\n",
+                "due: 2026-10-20\n",
+                "tags: release, cli\n",
+                "priority: high\n",
+                "---\n\n",
+                "# Release Plan\n",
+            ),
+        )
+        .unwrap();
+        let entries = workspace.list_note_details().unwrap();
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert!(entry.id > 0);
+        assert_eq!(entry.summary.title, "Release Plan");
+        assert_eq!(entry.created.as_deref(), Some("2026-10-13"));
+        assert!(entry.modified.is_some());
+        assert_eq!(
+            entry.metadata.get("due").map(String::as_str),
+            Some("2026-10-20")
+        );
+        assert_eq!(
+            entry.metadata.get("tags").map(String::as_str),
+            Some("release, cli")
+        );
+        assert_eq!(
+            entry.metadata.get("priority").map(String::as_str),
+            Some("high")
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

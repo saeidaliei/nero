@@ -105,6 +105,8 @@ nero workspace create personal
 nero workspace use personal
 nero new "Welcome to Nero"
 nero list
+nero list --long  # include note frontmatter
+nero config show  # inspect paths, workspace, keys, and remotes
 nero tui
 ```
 
@@ -137,10 +139,12 @@ nero workspace list
 | Command | What it does |
 | --- | --- |
 | `nero new "Title"` | Create a Markdown note with default frontmatter |
-| `nero list` | List notes in the selected workspace |
-| `nero open "Title"` | Print a note |
-| `nero edit "Title"` | Open a note in `$EDITOR` or `$VISUAL` |
-| `nero delete "Title"` / `nero rm "Title"` | Permanently delete a note |
+| `nero list` | Show a table with stable note IDs and timestamps |
+| `nero list --long` | Include frontmatter metadata such as tags, type, due date, and priority |
+| `nero open 3` | Print note ID 3 (titles and paths also work; `'#3'` is an explicit ID) |
+| `nero edit 3` | Edit note ID 3 in `$EDITOR` or `$VISUAL` |
+| `nero delete 3` / `nero rm 3` | Permanently delete note ID 3 |
+| `nero config show` | Show resolved paths, workspace settings, backup-key status, Git/rclone remotes |
 | `nero find "query"` | Search note content |
 | `nero backlinks "Title"` | Find notes linking to a note |
 | `nero today` | Open today's note and list due/overdue notes |
@@ -181,7 +185,7 @@ Frontmatter parsing is intentionally lightweight: Nero supports simple `key: val
 
 ## Where your data lives
 
-- **Workspace:** Markdown notes, assets, and a rebuildable `.nero` search index.
+- **Workspace:** Markdown notes, assets, a rebuildable `.nero` search index, and a persistent `.nero/note-ids.sqlite` ID registry.
 - **Application home:** `~/.nero` by default, containing configuration, workspace registrations, backup keys, and local backups.
 - **Relocation:** set `NERO_HOME` to an absolute path before running Nero to move the application home.
 
