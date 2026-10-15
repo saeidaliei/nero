@@ -127,6 +127,8 @@ jobs:
             librsvg2-dev \
             patchelf \
             xdg-utils \
+            desktop-file-utils \
+            libfuse2 \
             rpm
 
       - name: Setup Rust
@@ -158,30 +160,105 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Compress-Archive -Path target/release/nero.exe -DestinationPath "release/nero-cli-$env:RELEASE_NAME-$env:PLATFORM.zip"
 
-      - name: Build GUI
+      # On Linux, compile once and bundle each package format separately.
+      # This prevents a linuxdeploy/AppImage failure from hiding a successful
+      # DEB or RPM bundle.
+      - name: Build GUI binary (Linux, without bundling)
+        if: runner.os == 'Linux'
+        working-directory: gui
+        run: npm run tauri:build -- --no-bundle
+
+      - name: Bundle Linux DEB and RPM
+        if: runner.os == 'Linux'
+        working-directory: gui
+        run: npm run tauri -- bundle --bundles deb,rpm
+
+      - name: Bundle Linux AppImage
+        if: runner.os == 'Linux'
+        id: linux_appimage
+        continue-on-error: true
+        working-directory: gui
+        env:
+          NO_STRIP: "true"
+        run: npm run tauri -- bundle --bundles appimage --verbose
+
+      - name: Build and bundle GUI (macOS/Windows)
+        if: runner.os != 'Linux'
         working-directory: gui
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         run: npm run tauri:build
 
-      - name: Package GUI bundle (Unix)
-        if: runner.os != 'Windows'
+      - name: Collect Linux GUI installers
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_NAME: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.name }}
+          APPIMAGE_OUTCOME: ${{ steps.linux_appimage.outcome }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p release
+
+          debs=(gui/src-tauri/target/release/bundle/deb/*.deb)
+          rpms=(gui/src-tauri/target/release/bundle/rpm/*.rpm)
+          if (( ${#debs[@]} == 0 )); then
+            echo "::error::Tauri did not produce a DEB package"
+            exit 1
+          fi
+          if (( ${#rpms[@]} == 0 )); then
+            echo "::error::Tauri did not produce an RPM package"
+            exit 1
+          fi
+          cp "${debs[0]}" "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.deb"
+          cp "${rpms[0]}" "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.rpm"
+
+          if [[ "$APPIMAGE_OUTCOME" == "success" ]]; then
+            appimages=(gui/src-tauri/target/release/bundle/appimage/*.AppImage gui/src-tauri/target/release/bundle/appimage/*.appimage)
+            if (( ${#appimages[@]} > 0 )); then
+              cp "${appimages[0]}" "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.AppImage"
+            else
+              echo "::warning::AppImage bundling succeeded but no AppImage file was found"
+            fi
+          else
+            echo "::warning::AppImage bundling failed; DEB and RPM will still be published"
+          fi
+
+      - name: Collect macOS DMG installer
+        if: runner.os == 'macOS'
         env:
           RELEASE_NAME: ${{ github.ref_name }}
           PLATFORM: ${{ matrix.name }}
         run: |
-          test -d gui/src-tauri/target/release/bundle
-          tar -C gui/src-tauri/target/release/bundle -czf "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.tar.gz" .
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(gui/src-tauri/target/release/bundle/dmg/*.dmg)
+          if (( ${#dmgs[@]} == 0 )); then
+            echo "::error::Tauri did not produce a macOS DMG"
+            exit 1
+          fi
+          cp "${dmgs[0]}" "release/nero-gui-${RELEASE_NAME}-${PLATFORM}.dmg"
 
-      - name: Package GUI bundle (Windows)
+      - name: Collect Windows installers
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           RELEASE_NAME: ${{ github.ref_name }}
           PLATFORM: ${{ matrix.name }}
         run: |
-          if (-not (Test-Path gui/src-tauri/target/release/bundle)) { throw "Tauri bundle directory missing" }
-          Compress-Archive -Path gui/src-tauri/target/release/bundle/* -DestinationPath "release/nero-gui-$env:RELEASE_NAME-$env:PLATFORM.zip"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $count = 0
+          $msiFiles = Get-ChildItem -Path "gui/src-tauri/target/release/bundle/msi" -Filter "*.msi" -File -ErrorAction SilentlyContinue
+          foreach ($file in $msiFiles) {
+            Copy-Item $file.FullName "release/nero-gui-$env:RELEASE_NAME-$env:PLATFORM.msi"
+            $count++
+          }
+          $setupFiles = Get-ChildItem -Path "gui/src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File -ErrorAction SilentlyContinue
+          foreach ($file in $setupFiles) {
+            Copy-Item $file.FullName "release/nero-gui-$env:RELEASE_NAME-$env:PLATFORM-setup.exe"
+            $count++
+          }
+          if ($count -eq 0) { throw "Tauri did not produce an MSI or NSIS installer" }
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -191,9 +268,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  arch-package:
+    name: Build Arch Linux CLI/TUI package (best-effort)
+    needs: build
+    continue-on-error: true
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download Linux CLI archive
+        uses: actions/download-artifact@v5
+        with:
+          name: release-linux-x86_64
+          path: release-assets
+
+      - name: Build pacman package in Arch Linux
+        id: arch_build
+        continue-on-error: true
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          docker run --rm \
+            -e RELEASE_TAG="$RELEASE_TAG" \
+            -v "$GITHUB_WORKSPACE:/work" \
+            archlinux:base-devel \
+            bash /work/packaging/arch/build-release-package.sh
+
+      - name: Upload Arch package artifact
+        if: steps.arch_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archlinux-x86_64
+          path: release-assets/nero-bin-*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, arch-package]
+    # Arch packaging is optional; never publish unless the main platform matrix passed.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write

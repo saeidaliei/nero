@@ -36,13 +36,16 @@ Choose the interface you want. The CLI/TUI and desktop GUI are packaged separate
 ### Desktop GUI
 
 1. Open [Nero Releases](https://github.com/saeidaliei/nero/releases/latest).
-2. Download the **`nero-gui-...`** archive for your operating system, if one is attached to the release. Use the Linux, Windows, or macOS build that matches your machine.
-3. Extract the archive and install or open the platform bundle inside it:
-   - **Linux:** install an included `.deb` with `sudo apt install ./name.deb`, install an `.rpm` with `sudo dnf install ./name.rpm`, or make an AppImage executable (`chmod +x name.AppImage`) and run it. The archive may not contain every format.
-   - **Windows:** run the included `.msi` or `.exe` installer.
-   - **macOS:** open the included `.dmg` and move Nero to Applications, or open the provided app bundle.
+2. Download the **`nero-gui-...` installer** that matches your operating system and CPU (replace `vX.Y.Z` below with the release tag, such as `v1.0.0`):
+   - **Windows x86-64:** run `nero-gui-vX.Y.Z-windows-x86_64.msi` or `nero-gui-vX.Y.Z-windows-x86_64-setup.exe`.
+   - **macOS Intel:** open `nero-gui-vX.Y.Z-macos-x86_64.dmg`.
+   - **macOS Apple Silicon:** open `nero-gui-vX.Y.Z-macos-arm64.dmg` and move Nero to Applications.
+   - **Debian/Ubuntu:** install `nero-gui-vX.Y.Z-linux-x86_64.deb` with `sudo apt install ./nero-gui-vX.Y.Z-linux-x86_64.deb`.
+   - **Fedora/RPM-based distributions:** install `nero-gui-vX.Y.Z-linux-x86_64.rpm` with `sudo dnf install ./nero-gui-vX.Y.Z-linux-x86_64.rpm`.
+   - **Other Linux distributions:** use `nero-gui-vX.Y.Z-linux-x86_64.AppImage` when it is attached to the release. Run `chmod +x nero-gui-vX.Y.Z-linux-x86_64.AppImage` once, then launch it. AppImage generation is best-effort because the upstream Linux bundler can fail independently of the DEB/RPM packages.
+3. On **Arch Linux**, if attached, `nero-bin-X.Y.Z-1-x86_64.pkg.tar.zst` installs the CLI/TUI with `sudo pacman -U ./nero-bin-X.Y.Z-1-x86_64.pkg.tar.zst`. The package is built separately and is best-effort; it does not install the desktop GUI. Use the AppImage when available or build the GUI from source.
 
-**If the release only contains “Source code” downloads and no `nero-gui-...` archive, a prebuilt desktop bundle is not available there yet.** In that case, follow [Build the GUI from source](#build-the-gui-from-source).
+The CLI downloads (`nero-cli-...`) are separate from desktop installers. If no matching `nero-gui-...` asset is attached to the latest release, follow [Build the GUI from source](#build-the-gui-from-source).
 
 Once installed, launch Nero from your desktop environment's application menu. The `nero gui` command is a CLI convenience that starts a `nero-gui` executable found on your `PATH`; it works only when that executable is available there.
 
