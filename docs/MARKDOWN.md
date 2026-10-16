@@ -96,3 +96,7 @@ The GUI's native image import copies the source image into the workspace `assets
 ## Source of truth
 
 Editing the Markdown file outside Nero is supported and expected. The file watcher refreshes the index/UI when files change.
+
+## Viewing arbitrary Markdown
+
+`nero view <file>` opens any Markdown file in the standalone terminal reader, including files outside a Nero workspace. `nero FILE.md` is a shorthand for the same reader. Use `nero view --browser <file>` or `nero browse <note|ID>` to create and open a styled HTML preview in the default browser. Browser previews display optional frontmatter, preserve relative asset paths with a local base URL, and render the Markdown body with the shared Comrak engine. Preview HTML lives in a private temporary directory and is cleaned up after seven days. Highlight.js and MathJax are loaded from CDNs for browser code highlighting and math typesetting, respectively, so those enhancements require an internet connection.

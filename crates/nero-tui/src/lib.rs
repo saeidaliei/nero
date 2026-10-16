@@ -1,4 +1,5 @@
 mod markdown;
+mod reader;
 
 use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, time::Duration};
 
@@ -60,6 +61,16 @@ const COMMANDS: &[CommandSpec] = &[
         name: "edit",
         description: "edit the selected note in $EDITOR",
         usage: "edit",
+    },
+    CommandSpec {
+        name: "browser",
+        description: "open the selected note in the default browser",
+        usage: "browser",
+    },
+    CommandSpec {
+        name: "view-browser",
+        description: "open the selected note in the default browser",
+        usage: "view-browser",
     },
     CommandSpec {
         name: "search",
@@ -242,6 +253,26 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn open_selected_in_browser(&mut self) {
+        let Some(document) = self.document.as_ref() else {
+            self.status = "No note selected to view in a browser".into();
+            return;
+        };
+        let title = self.title.clone();
+        let source = document.source.clone();
+        let absolute = self.workspace.root().join(&self.path);
+        let base_dir = absolute.parent().map(PathBuf::from);
+        let result = (|| -> nero_core::Result<PathBuf> {
+            let preview = nero_core::write_browser_preview(&title, &source, base_dir.as_deref())?;
+            nero_core::open_path_in_browser(&preview)?;
+            Ok(preview)
+        })();
+        self.status = match result {
+            Ok(_) => format!("Opened browser preview for {}", self.path.display()),
+            Err(error) => format!("Could not open browser preview: {error}"),
+        };
     }
 
     fn push_recent(&mut self, note: NoteSummary) {
@@ -520,6 +551,11 @@ impl App {
                     self.status = format!("Note not found: {argument}");
                 }
             }
+            "browser" | "view-browser" => {
+                self.open_selected_in_browser();
+                self.input.clear();
+                self.input_mode = InputMode::Normal;
+            }
             "search" => {
                 if argument.is_empty() {
                     self.status = "Usage: :search <query>".into();
@@ -582,6 +618,11 @@ impl App {
             }
         }
     }
+}
+
+/// Open a standalone Markdown document in the read-only terminal reader.
+pub fn view_markdown(title: &str, path: &str, source: &str) -> io::Result<()> {
+    reader::run(title, path, source)
 }
 
 pub fn run(workspace: Workspace) -> io::Result<()> {
@@ -737,7 +778,7 @@ fn draw_side(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let text = match app.input_mode {
         InputMode::Normal => format!(
-            "{}  ·  j/k navigate  e edit  / search  : commands  b links  c context  r recent  tab side  q quit",
+            "{}  ·  j/k navigate  e edit  B browser  / search  : commands  b links  c context  r recent  tab side  q quit",
             app.status
         ),
         InputMode::Search => format!("/{}  ·  Enter search  Esc cancel", app.input),
@@ -840,6 +881,7 @@ fn handle_event(app: &mut App, terminal: &mut DefaultTerminal) -> io::Result<boo
     match key.code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Char('e') => app.edit_selected(terminal)?,
+        KeyCode::Char('B') => app.open_selected_in_browser(),
         KeyCode::Down | KeyCode::Char('j') => {
             if app.side_mode == SideMode::None {
                 app.move_selection(1).map_err(to_io)?;

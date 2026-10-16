@@ -30,6 +30,7 @@ pub fn render(document: &Document) -> Text<'static> {
     let mut in_frontmatter = false;
     let mut in_code = false;
     let mut in_math = false;
+    let mut seen_first_h1 = false;
 
     for (line_number, raw) in body.lines().enumerate() {
         let line = raw.trim_end();
@@ -116,6 +117,11 @@ pub fn render(document: &Document) -> Text<'static> {
             continue;
         }
         if let Some(heading) = trimmed.strip_prefix("# ") {
+            let is_first_h1 = !seen_first_h1;
+            seen_first_h1 = true;
+            if is_first_h1 && heading.trim() == document.title {
+                continue;
+            }
             lines.push(Line::from(vec![Span::styled(
                 heading.to_string(),
                 header_style(),
@@ -330,6 +336,26 @@ fn replace_frac(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn omits_matching_title_heading_to_avoid_repeating_the_reader_title() {
+        let document =
+            Document::parse("---\ntitle: Test\n---\n\n# Test\n\n## Details\n\nBody text.");
+        let rendered = render(&document);
+        let plain = rendered
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        assert!(!plain.iter().any(|line| line.trim() == "Test"));
+        assert!(plain.iter().any(|line| line.trim() == "Details"));
+        assert!(plain.iter().any(|line| line.contains("Body text.")));
+    }
 
     #[test]
     fn renders_common_markdown_shapes() {

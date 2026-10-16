@@ -1,7 +1,7 @@
 use std::{
-    env,
-    io::{self, Write},
-    path::PathBuf,
+    env, fs,
+    io::{self, IsTerminal, Read, Write},
+    path::{Path, PathBuf},
     process::{Command as ProcessCommand, exit},
 };
 
@@ -23,6 +23,14 @@ fn run() -> Result<()> {
     let workspace_override = extract_workspace_option(&mut raw_args)?;
     let mut args = raw_args.into_iter();
     let command = args.next().unwrap_or_else(|| "help".into());
+
+    // A Markdown path can be opened directly without resolving a workspace: `nero README.md`.
+    if is_existing_markdown_file(Path::new(&command)) {
+        let mut values = vec![command];
+        values.extend(args);
+        handle_view_command(values, workspace_override.as_deref(), false)?;
+        return Ok(());
+    }
 
     match command.as_str() {
         "help" | "--help" | "-h" => print_help(),
@@ -62,6 +70,10 @@ fn run() -> Result<()> {
                 )));
             }
         },
+        "view" => handle_view_command(args.collect(), workspace_override.as_deref(), false)?,
+        "browse" | "browser" => {
+            handle_view_command(args.collect(), workspace_override.as_deref(), true)?
+        }
         "init" => {
             let root = args
                 .next()
@@ -869,6 +881,112 @@ fn handle_workspace_command(
     Ok(())
 }
 
+fn is_markdown_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "md" | "markdown" | "mdown"
+            )
+        })
+}
+
+fn is_existing_markdown_file(path: &Path) -> bool {
+    path.is_file() && is_markdown_extension(path)
+}
+
+fn handle_view_command(
+    values: Vec<String>,
+    workspace_override: Option<&str>,
+    force_browser: bool,
+) -> Result<()> {
+    let mut browser = force_browser;
+    let mut positional = Vec::new();
+    for value in values {
+        match value.as_str() {
+            "--browser" | "-b" => browser = true,
+            "--help" | "-h" => {
+                println!(
+                    "view <file|note|ID|-> [--browser]\n  View an arbitrary Markdown file or Nero note.\n  Default: interactive terminal reader.\n  --browser, -b: open a styled HTML preview in the default browser.\n  Use `-` to read Markdown from standard input.\n  `nero FILE.md` is shorthand for `nero view FILE.md`.\n  `nero browse <file|note|ID>` always opens the browser preview."
+                );
+                return Ok(());
+            }
+            _ => positional.push(value),
+        }
+    }
+
+    let query = if positional.is_empty() && !io::stdin().is_terminal() {
+        "-".to_owned()
+    } else if positional.is_empty() {
+        return Err(nero_core::NeroError::Message(
+            "usage: nero view <file|note|ID|-> [--browser]; use `nero view --help` for details"
+                .into(),
+        ));
+    } else {
+        join_args(positional)?
+    };
+
+    let (title, source, display_path, base_dir) = if query == "-" {
+        let mut source = String::new();
+        io::stdin().read_to_string(&mut source)?;
+        let title = nero_core::Document::parse(&source).title;
+        let title = if title == "Untitled" {
+            "Standard input".to_owned()
+        } else {
+            title
+        };
+        let cwd = env::current_dir()?;
+        (title, source, "<stdin>".to_owned(), Some(cwd))
+    } else {
+        let candidate = PathBuf::from(&query);
+        if is_existing_markdown_file(&candidate) {
+            let source = fs::read_to_string(&candidate)?;
+            let document = nero_core::Document::parse(&source);
+            let title = if document.title == "Untitled" {
+                candidate
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("Markdown document")
+                    .to_owned()
+            } else {
+                document.title
+            };
+            let absolute = fs::canonicalize(&candidate).unwrap_or(candidate);
+            let display_path = absolute.display().to_string();
+            let base_dir = absolute.parent().map(Path::to_path_buf);
+            (title, source, display_path, base_dir)
+        } else if candidate.is_file() && query.trim_start_matches('#').parse::<u64>().is_err() {
+            return Err(nero_core::NeroError::Message(format!(
+                "not a Markdown file: {} (expected .md, .markdown, or .mdown)",
+                candidate.display()
+            )));
+        } else {
+            let workspace = selected_workspace(workspace_override)?;
+            let note = workspace.read_note(&query)?;
+            let absolute = workspace.root().join(&note.summary.path);
+            let base_dir = absolute.parent().map(Path::to_path_buf);
+            (
+                note.summary.title,
+                note.document.source,
+                absolute.display().to_string(),
+                base_dir,
+            )
+        }
+    };
+
+    if browser {
+        let preview = nero_core::write_browser_preview(&title, &source, base_dir.as_deref())?;
+        nero_core::open_path_in_browser(&preview)?;
+        println!("opened browser preview for {display_path}");
+    } else {
+        nero_tui::view_markdown(&title, &display_path, &source).map_err(|error| {
+            nero_core::NeroError::Message(format!("could not start Markdown reader: {error}"))
+        })?;
+    }
+    Ok(())
+}
+
 fn parse_backup_flags(values: Vec<String>) -> Result<(bool, Option<PathBuf>, Vec<String>)> {
     let mut encrypt = false;
     let mut identity = None;
@@ -999,6 +1117,9 @@ NOTES
   new <title>               Create a Markdown note with title/date frontmatter
   list [-l|--long]          List notes with IDs and timestamps; -l includes frontmatter
   open <note|ID>            Print a note (an integer ID or #ID also works)
+  view <file|note|ID|->     Read Markdown in the terminal; --browser opens browser preview
+  browse <file|note|ID>     Open a Markdown file/note as styled HTML in your browser
+  nero FILE.md              Shorthand for `nero view FILE.md`
   edit <note|ID>            Open a note in $EDITOR
   delete <note|ID>          Permanently delete a note by title, path, or ID (alias: rm)
   find <query>              Search note content

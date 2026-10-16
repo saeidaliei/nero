@@ -90,7 +90,7 @@ The CLI is scriptable and should never require a UI.
 
 ### TUI
 
-The TUI is a keyboard-first reader/browser. Press `e` or run `:edit` to hand the selected Markdown file to `$EDITOR`; Nero temporarily restores the normal terminal, then re-enters the TUI and refreshes the index when the editor exits. Editing remains delegated to the user’s editor rather than embedding another editing engine.
+The TUI is a keyboard-first reader/browser. Press `e` or run `:edit` to hand the selected Markdown file to `$EDITOR`; Nero temporarily restores the normal terminal, then re-enters the TUI and refreshes the index when the editor exits. Press `B` or run `:browser` to open a read-only HTML preview in the operating system's default browser. The standalone `nero view` reader uses the same terminal Markdown renderer but does not require a workspace, while browser previews use the shared Comrak HTML renderer and a temporary HTML wrapper. Editing remains delegated to the user's editor rather than embedding another editing engine.
 
 ### GUI
 

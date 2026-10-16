@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added a standalone terminal Markdown reader (`nero view` / `nero FILE.md`) for files outside Nero workspaces, including stdin support.
+- Added a styled browser preview (`nero view --browser`, `nero browse`) with optional frontmatter display and source-relative asset paths.
+- Added TUI `B`, `:browser`, and `:view-browser` actions to open the selected note in the default browser without entering edit mode.
+
 ## Maintenance updates
 
 - Centralized user-level state under `~/.nero` by default: config, backup keys, local backups, and the `workspaces/` container.

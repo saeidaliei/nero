@@ -5,6 +5,7 @@ mod git;
 mod index;
 mod note_ids;
 mod storage;
+mod viewer;
 mod watcher;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -28,6 +29,7 @@ pub use encryption::BackupKeyInfo;
 pub use git::GitStatus;
 pub use index::IndexStats;
 pub use storage::{RemoteBackup, StorageRemote};
+pub use viewer::{open_path_in_browser, render_standalone_html, write_browser_preview};
 pub use watcher::WorkspaceWatcher;
 
 use index::Index;

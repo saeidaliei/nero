@@ -59,8 +59,6 @@ The next milestone is a reproducible release with green tests and working deskto
 
 ### Note management and search
 
-- [ ] Verify persistent integer IDs (`nero list`, `nero list -l`, and `nero edit/delete <ID>`) on Linux, Windows, and macOS, including workspace backup/restore, Git checkout, deletion, and recreating a note at the same path.
-- [ ] Verify `nero config show` presents workspace, key, Git, and rclone settings without leaking private key material or credentials.
 - [ ] Confirm `nero delete` / `nero rm` rejects paths outside the active workspace and handles nested note paths, missing files, and confirmation policy consistently.
 - [ ] Confirm deleted notes disappear from search results and backlinks after index refresh.
 - [ ] Test search ranking for title matches, body matches, multiple query terms, Unicode/case folding, and punctuation.
@@ -75,7 +73,8 @@ The next milestone is a reproducible release with green tests and working deskto
 - [ ] Verify that the note title is not duplicated when the first Markdown H1 matches it, while later headings still render normally.
 - [ ] Test unsaved edits, external file changes, conflicts, and save errors without losing note content.
 - [ ] Check local image paths and imported images in reading, editor, and split-preview modes.
-- [ ] Check math, wiki links, fenced code, raw HTML handling, long lines, large notes, and Unicode in CLI, TUI, and GUI.
+- [ ] Check math, wiki links, fenced code, raw HTML handling, long lines, large notes, and Unicode in CLI, terminal reader, browser preview, TUI, and GUI.
+- [ ] Verify standalone `nero view` behavior for files outside a workspace, piped input, note IDs, and local relative image/link paths on Linux, macOS, and Windows.
 - [ ] Add a short manual GUI smoke-test checklist that can be followed before each release.
 
 ### `nero doctor` and diagnostics

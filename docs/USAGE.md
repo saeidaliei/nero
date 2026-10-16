@@ -43,7 +43,7 @@ The everyday commands are, for example:
 
 ```bash
 nero list                    # table with persistent note IDs and timestamps
-nero list --long             # also show frontmatter metadata
+nero list -l                  # also show frontmatter metadata (-l is short for --long)
 nero find "something"
 nero edit "An idea"           # title/path also work
 nero edit 3                   # use the ID shown by `nero list`
@@ -80,8 +80,11 @@ nero workspace add <name> <path> Register an existing workspace
 nero workspace use <name>        Select a named default
 nero workspace list              List configured workspaces
 nero new <title>                 Create a Markdown note
-nero list [-l|--long]            List notes with stable IDs and timestamps
+nero list [-l|--long]            List notes with stable IDs and timestamps; -l adds metadata
 nero open <note|ID>              Print a note; a numeric ID or #ID works
+nero view <file|note|ID|->       Read Markdown in the terminal; --browser opens the browser
+nero FILE.md                     Shorthand for `nero view FILE.md`
+nero browse <file|note|ID>        Open a styled HTML preview in the default browser
 nero edit <note|ID>              Open a note in $EDITOR or $VISUAL
 nero config show                 Show paths, workspace config, keys, and remotes
 nero config path                 Print the user config file path
@@ -100,6 +103,21 @@ Run `nero --help` for the full command set, including Git and backup commands.
 
 `nero config show` summarizes the active application/config paths, registered workspaces, backup identity location and public recipient, workspace storage profiles, Git remotes, and rclone configuration file/remotes. It never prints the private backup identity or reads provider credentials into its output; cloud provider credentials remain managed by rclone.
 
+## Markdown reader and browser preview
+
+Use the reader for ordinary Markdown files even when they are not Nero notes and do not live in a workspace:
+
+```bash
+nero view README.md                  # interactive terminal reader
+nero README.md                       # shorthand for the same reader
+nero view ~/Documents/research.md    # external file
+cat report.md | nero view -          # read Markdown from stdin
+nero view --browser README.md        # styled HTML preview in the default browser
+nero browse "Project Plan"           # browser preview of a note in the selected workspace
+```
+
+The browser preview is written to a private, randomly named directory under the system temporary directory and opened with the operating system's default browser. Old previews are cleaned up after seven days. Relative image paths and links use the source Markdown file's directory. Frontmatter is optional and, when present, appears in a collapsible metadata panel. Code highlighting and math typesetting use Highlight.js and MathJax from their CDNs, so those enhancements require an internet connection; the Markdown content itself is rendered locally by Nero's Comrak renderer.
+
 ## TUI
 
 ```bash
@@ -110,8 +128,9 @@ The TUI is keyboard-first:
 
 - `j` / `k` — move through notes
 - `e` — edit the selected note in `$EDITOR`, then return to Nero
+- `B` — open the selected note in the default browser as a read-only HTML preview
 - `/` — search
-- `:` — command palette (`:edit` also edits the selected note)
+- `:` — command palette (`:edit`, `:browser`, and `:view-browser` are available)
 - `b` — backlinks
 - `c` — context
 - `r` — recent notes

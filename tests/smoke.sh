@@ -21,6 +21,47 @@ if [[ ! -x "$NERO_BIN" ]]; then
   exit 2
 fi
 
+# The standalone reader should not require a workspace. On Linux, stub xdg-open so this
+# test validates generated HTML without launching a real browser in CI. Cross-platform HTML
+# rendering and temporary-file behavior are also covered by nero-core unit tests.
+"$NERO_BIN" view --help | grep -F "interactive terminal reader"
+if [[ "$(uname -s)" == Linux* ]]; then
+  VIEWER_BIN="$TMP/viewer-bin"
+  mkdir -p "$VIEWER_BIN"
+  cat > "$VIEWER_BIN/xdg-open" <<'VIEWER_OPENER'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" > "${NERO_BROWSER_CAPTURE:?}"
+VIEWER_OPENER
+  chmod +x "$VIEWER_BIN/xdg-open"
+  cat > "$TMP/Standalone Preview.md" <<'STANDALONE_NOTE'
+---
+title: Standalone Preview
+due: 2026-10-20
+tags: external, viewer
+---
+
+# Standalone Preview
+
+This file is outside a Nero workspace.
+STANDALONE_NOTE
+  NERO_BROWSER_CAPTURE="$TMP/browser-preview-path" PATH="$VIEWER_BIN:$PATH" \
+    "$NERO_BIN" view --browser "$TMP/Standalone Preview.md"
+  for _ in {1..30}; do
+    [[ -s "$TMP/browser-preview-path" ]] && break
+    sleep 0.1
+  done
+  PREVIEW_PATH="$(cat "$TMP/browser-preview-path")"
+  test -f "$PREVIEW_PATH"
+  grep -Fq '<h1 class="document-title">Standalone Preview</h1>' "$PREVIEW_PATH"
+  grep -Fq '<dt>due</dt><dd>2026-10-20</dd>' "$PREVIEW_PATH"
+  grep -Fq 'This file is outside a Nero workspace.' "$PREVIEW_PATH"
+  rm -f "$PREVIEW_PATH"
+  rmdir "$(dirname "$PREVIEW_PATH")"
+else
+  echo "skip: browser-opener integration check currently runs on Linux; HTML generation is covered by unit tests"
+fi
+
 "$NERO_BIN" init "$TMP"
 cd "$TMP"
 "$NERO_BIN" new "Disposable Smoke Note"

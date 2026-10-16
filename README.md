@@ -143,8 +143,12 @@ nero workspace list
 | --- | --- |
 | `nero new "Title"` | Create a Markdown note with default frontmatter |
 | `nero list` | Show a table with stable note IDs and timestamps |
-| `nero list --long` | Include frontmatter metadata such as tags, type, due date, and priority |
+| `nero list -l` / `nero list --long` | Include frontmatter metadata such as tags, type, due date, and priority |
 | `nero open 3` | Print note ID 3 (titles and paths also work; `'#3'` is an explicit ID) |
+| `nero view README.md` | Open any Markdown file in the read-only terminal reader, even outside a workspace |
+| `nero README.md` | Shorthand for the terminal reader |
+| `nero view --browser README.md` | Open a styled HTML reading preview in your default browser |
+| `nero browse 3` | Open Nero note ID 3 in the browser |
 | `nero edit 3` | Edit note ID 3 in `$EDITOR` or `$VISUAL` |
 | `nero delete 3` / `nero rm 3` | Permanently delete note ID 3 |
 | `nero config show` | Show resolved paths, workspace settings, backup-key status, Git/rclone remotes |
@@ -217,18 +221,47 @@ A private Git repository controls who can access its contents but does **not** c
 
 The documentation website is published at [saeidaliei.github.io/nero](https://saeidaliei.github.io/nero/).
 
-## Development and tests
+## Development and test
 
 The repository pins Rust in `rust-toolchain.toml` and Node.js 24 in `gui/.nvmrc`.
 
 Run the Rust checks from the repository root:
 
+### Prerequisites
+
+- Rust toolchain specified by the repository
+- Node.js version specified in `gui/.nvmrc` and npm
+- Tauri's native system dependencies for your operating system
+- Hugo (for building the documentation site)
+
+### Rust CLI, TUI, and core
+
+Run these commands from the repository root:
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 ./tests/smoke.sh
 ```
+
+
+```bash
+# Check formatting without modifying files
+cargo fmt --all -- --check
+# Format Rust code
+cargo fmt --all
+# Run Clippy with warnings treated as errors
+cargo clippy --workspace --all-targets -- -D warnings
+# Run all Rust tests
+cargo test --workspace --all-targets
+cargo test --manifest-path gui/src-tauri/Cargo.toml
+# Build all Rust packages
+cargo build --workspace
+# Run the CLI smoke tests
+./tests/smoke.sh
+```
+
+### Desktop GUI (Tauri)
 
 Run GUI checks from `gui/`:
 
@@ -237,13 +270,68 @@ npm ci
 npm test
 npx tsc --noEmit
 npm run build
-cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
+```bash
+cd gui
+# Select the repository's Node.js version (if using nvm)
+nvm use
+# Install frontend dependencies
+npm ci
+# Run frontend unit tests
+npm test
+# Check TypeScript types
+npx tsc --noEmit
+# Build the frontend
+npm run build
+# Run cargo check
+cargo check --manifest-path src-tauri/Cargo.toml
+# Launch the desktop app in development mode
+npm run tauri:dev
+# Build a distributable desktop application
+npm run tauri:build
+```
+
+The development command opens the desktop application with live frontend updates. 
+The production build generates platform-specific bundles where supported by the local environment.
+
+### Documentation
+
+Run from the repository root:
+
+```bash
+# Synchronize generated documentation
+python3 docs-site/scripts/sync_docs.py
+
+# Build the documentation site
+hugo --source docs-site
+```
+
+### Recommended pre-release checks
+
+Run all of the following successfully before publishing a release:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+./tests/smoke.sh
+
+cd gui
+npm ci
+npm test
+npx tsc --noEmit
+npm run build
+npm run tauri:build
+```
+
+Run the release checks on the supported operating systems in CI as well. 
+A successful build on one platform does not guarantee that its installers will build correctly on another.
 For development details and CI behavior, see [Development](docs/DEVELOPMENT.md) and [CI](docs/CI.md).
 
 ## Status and license
 
-Nero is under active development. Some installation options depend on platform bundles being published with a release; if in doubt, use the source-build instructions above and check the [roadmap](docs/ROADMAP.md).
+Nero is under active development. Some installation options depend on platform bundles being published with a release; 
+if in doubt, use the source-build instructions above and check the [roadmap](docs/ROADMAP.md).
 
 Licensed under the [MIT License](LICENSE).
