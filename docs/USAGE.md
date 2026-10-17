@@ -108,7 +108,7 @@ Run `nero --help` for the full command set, including Git and backup commands.
 Use the reader for ordinary Markdown files even when they are not Nero notes and do not live in a workspace:
 
 ```bash
-nero view README.md                  # interactive terminal reader
+nero view README.md                  # interactive terminal reader (press B for browser preview)
 nero README.md                       # shorthand for the same reader
 nero view ~/Documents/research.md    # external file
 cat report.md | nero view -          # read Markdown from stdin
@@ -116,7 +116,7 @@ nero view --browser README.md        # styled HTML preview in the default browse
 nero browse "Project Plan"           # browser preview of a note in the selected workspace
 ```
 
-The browser preview is written to a private, randomly named directory under the system temporary directory and opened with the operating system's default browser. Old previews are cleaned up after seven days. Relative image paths and links use the source Markdown file's directory. Frontmatter is optional and, when present, appears in a collapsible metadata panel. Code highlighting and math typesetting use Highlight.js and MathJax from their CDNs, so those enhancements require an internet connection; the Markdown content itself is rendered locally by Nero's Comrak renderer.
+While the terminal reader is open, press `B` to open that same document in the browser without exiting the reader. The browser preview is written to a private, randomly named directory under the system temporary directory and opened with the operating system's default browser. Old previews are cleaned up after seven days. Relative image paths and links use the source Markdown file's directory. Frontmatter is optional and, when present, appears in a collapsible metadata panel. Code highlighting and math typesetting use Highlight.js and MathJax from their CDNs, so those enhancements require an internet connection; the Markdown content itself is rendered locally by Nero's Comrak renderer.
 
 ## TUI
 

@@ -1,4 +1,4 @@
-use std::{io, time::Duration};
+use std::{io, path::Path, time::Duration};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use nero_core::Document;
@@ -13,7 +13,7 @@ use ratatui::{
 use crate::markdown;
 
 /// Open any Markdown source in a read-only terminal reader, without requiring a workspace.
-pub fn run(title: &str, path: &str, source: &str) -> io::Result<()> {
+pub fn run(title: &str, path: &str, source: &str, base_dir: Option<&Path>) -> io::Result<()> {
     let document = Document::parse(source);
     let rendered = markdown::render(&document);
     let title = title.to_owned();
@@ -28,8 +28,10 @@ pub fn run(title: &str, path: &str, source: &str) -> io::Result<()> {
 
     ratatui::run(|terminal| {
         let mut scroll = 0_u16;
+        let mut status = String::new();
         loop {
-            terminal.draw(|frame| draw(frame, &title, &path, &metadata, &rendered, scroll))?;
+            terminal
+                .draw(|frame| draw(frame, &title, &path, &metadata, &rendered, scroll, &status))?;
             if !event::poll(Duration::from_millis(75))? {
                 continue;
             }
@@ -41,6 +43,12 @@ pub fn run(title: &str, path: &str, source: &str) -> io::Result<()> {
             }
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
+                KeyCode::Char('B') => {
+                    status = match open_browser_preview(&title, source, base_dir) {
+                        Ok(()) => "Opened read-only browser preview".to_owned(),
+                        Err(error) => format!("Could not open browser preview: {error}"),
+                    };
+                }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break Ok(()),
                 KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
                 KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
@@ -67,6 +75,7 @@ fn draw(
     metadata: &str,
     rendered: &Text<'static>,
     scroll: u16,
+    status: &str,
 ) {
     let area = frame.area();
     let sections = Layout::vertical([
@@ -101,9 +110,19 @@ fn draw(
             .scroll((scroll, 0)),
         sections[1],
     );
+    let footer = if status.is_empty() {
+        " j/k or ↑/↓ scroll · PgUp/PgDn page · g/G top/bottom · B browser · q/Esc close ".to_owned()
+    } else {
+        format!(" j/k scroll · B browser · q/Esc close · {status} ")
+    };
     frame.render_widget(
-        Paragraph::new(" j/k or ↑/↓ scroll · PgUp/PgDn page · g/G top/bottom · q/Esc close ")
-            .style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(footer).style(Style::default().fg(Color::DarkGray)),
         sections[2],
     );
+}
+
+fn open_browser_preview(title: &str, source: &str, base_dir: Option<&Path>) -> Result<(), String> {
+    let preview = nero_core::write_browser_preview(title, source, base_dir)
+        .map_err(|error| error.to_string())?;
+    nero_core::open_path_in_browser(&preview).map_err(|error| error.to_string())
 }

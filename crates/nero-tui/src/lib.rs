@@ -1,7 +1,13 @@
 mod markdown;
 mod reader;
 
-use std::{collections::VecDeque, env, io, path::PathBuf, sync::mpsc::Receiver, time::Duration};
+use std::{
+    collections::VecDeque,
+    env, io,
+    path::{Path, PathBuf},
+    sync::mpsc::Receiver,
+    time::Duration,
+};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -621,8 +627,13 @@ impl App {
 }
 
 /// Open a standalone Markdown document in the read-only terminal reader.
-pub fn view_markdown(title: &str, path: &str, source: &str) -> io::Result<()> {
-    reader::run(title, path, source)
+pub fn view_markdown(
+    title: &str,
+    path: &str,
+    source: &str,
+    base_dir: Option<&Path>,
+) -> io::Result<()> {
+    reader::run(title, path, source, base_dir)
 }
 
 pub fn run(workspace: Workspace) -> io::Result<()> {

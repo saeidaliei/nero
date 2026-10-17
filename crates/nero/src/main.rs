@@ -980,9 +980,11 @@ fn handle_view_command(
         nero_core::open_path_in_browser(&preview)?;
         println!("opened browser preview for {display_path}");
     } else {
-        nero_tui::view_markdown(&title, &display_path, &source).map_err(|error| {
-            nero_core::NeroError::Message(format!("could not start Markdown reader: {error}"))
-        })?;
+        nero_tui::view_markdown(&title, &display_path, &source, base_dir.as_deref()).map_err(
+            |error| {
+                nero_core::NeroError::Message(format!("could not start Markdown reader: {error}"))
+            },
+        )?;
     }
     Ok(())
 }
